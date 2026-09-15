@@ -88,6 +88,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, string[]> = {
   cashier: [
     'sales.view', 'sales.create', 'sales.hold',
     'sales.discount', 'sales.priceOverride',
+    'products.view', // POS product grid + barcode lookup need this
     'customers.view', 'customers.collect',
     'stock.view', 'shift.open', 'shift.close',
     'mfs.view', 'mfs.create', 'invoices.view', 'notifications.view', 'exports.run'

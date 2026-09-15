@@ -8,7 +8,6 @@
  *
  * Handler signature: run(user, args) where args[0] is always the DB.
  */
-import { createHash } from 'node:crypto';
 import { ipcMain } from 'electron';
 import type { DB } from '../../domain/db/connection';
 import { IPC, type IpcError, type Range } from '../../shared/ipc';
@@ -63,13 +62,10 @@ import {
   deleteBackup, getBackupDirectory, setBackupDirectory
 } from '../../domain/services/backupService';
 import { schemaVersion } from '../../domain/db/migrate';
+import { runIdempotent as runIdempotentCore } from '../../domain/repos/idempotency';
 import { setRestorePending } from '../restore';
 
 /* ---------------- helpers ---------------- */
-
-function sha256(input: string): string {
-  return createHash('sha256').update(input).digest('hex');
-}
 
 function userOf(db: DB, token: string): SessionUser {
   const user = resolveSession(db, token);
@@ -93,39 +89,37 @@ function localDateToEpoch(dateStr: string): number {
 }
 
 /**
- * Idempotency wrapper: same (session, key, payload) replays the stored
- * result; same key with a different payload is rejected.
+ * Idempotency wrapper (see domain/repos/idempotency.ts): same
+ * (session, key, payload) replays the stored result; same key with a
+ * different payload is rejected.
  */
 function runIdempotent<T>(db: DB, user: SessionUser, key: string | undefined, payload: unknown, fn: () => T): T {
-  if (!key) return fn();
-  const payloadHash = sha256(JSON.stringify(payload ?? null));
-  const existing = db
-    .prepare('SELECT result, request_hash FROM idempotency_keys WHERE business_id = ? AND session_id = ? AND idem_key = ?')
-    .get(user.businessId, user.sessionId, key) as { result: string; request_hash: string } | undefined;
-  if (existing) {
-    if (existing.request_hash !== payloadHash) {
-      throw new ConflictError('এই রিকোয়েস্ট চাবিটি অন্য ডেটার সাথে আগে ব্যবহৃত হয়েছে। নতুন চাবির সাথে চেষ্টা করুন।');
-    }
-    return JSON.parse(existing.result) as T;
-  }
-  const result = fn();
-  const serialized = JSON.stringify(result ?? null);
+  return runIdempotentCore(db, { businessId: user.businessId, sessionId: user.sessionId }, key, payload, fn);
+}
+
+export type IpcResult = { ok: true; data: unknown } | { ok: false; error: IpcError };
+
+/**
+ * Resolve session → enforce permission → run handler → serialize errors.
+ * This is the SINGLE enforcement path every registered channel goes
+ * through; tests drive the exact same function the Electron bridge uses.
+ */
+export function dispatchIpc(db: DB, channel: string, token: string, ...rest: unknown[]): IpcResult {
+  const def = HANDLERS.find((h) => h.channel === channel);
+  if (!def) return { ok: false, error: { code: 'NOT_FOUND', message: 'চ্যানেলটি পাওয়া যায়নি।' } };
   try {
-    db.prepare(
-      `INSERT INTO idempotency_keys (id, business_id, session_id, idem_key, request_hash, result, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      sha256(`${user.sessionId}:${key}:${payloadHash}`), user.businessId, user.sessionId, key,
-      payloadHash, serialized, Date.now()
-    );
-  } catch {
-    // UNIQUE collision = concurrent duplicate; re-read and replay
-    const again = db
-      .prepare('SELECT result FROM idempotency_keys WHERE business_id = ? AND session_id = ? AND idem_key = ?')
-      .get(user.businessId, user.sessionId, key) as { result: string } | undefined;
-    if (again) return JSON.parse(again.result) as T;
+    let user: SessionUser;
+    if (def.auth) {
+      user = userOf(db, token);
+      if (def.permission) requirePermission(user, def.permission);
+    } else {
+      user = undefined as unknown as SessionUser;
+    }
+    const result = def.run(user, [db, ...rest]);
+    return { ok: true, data: result };
+  } catch (e) {
+    return { ok: false, error: toIpcError(e) };
   }
-  return result;
 }
 
 /**
@@ -1042,20 +1036,8 @@ let ipcOptions: IpcOptions | undefined;
 export function registerIpc(db: DB, options?: IpcOptions): void {
   ipcOptions = options;
   for (const def of HANDLERS) {
-    ipcMain.handle(def.channel, async (_event, token: string, ...rest: unknown[]) => {
-      try {
-        let user: SessionUser;
-        if (def.auth) {
-          user = userOf(db, token);
-          if (def.permission) requirePermission(user, def.permission);
-        } else {
-          user = undefined as unknown as SessionUser;
-        }
-        const result = def.run(user, [db, ...rest]);
-        return { ok: true as const, data: result };
-      } catch (e) {
-        return { ok: false as const, error: toIpcError(e) };
-      }
-    });
+    ipcMain.handle(def.channel, (_event, token: string, ...rest: unknown[]) =>
+      dispatchIpc(db, def.channel, token, ...rest)
+    );
   }
 }

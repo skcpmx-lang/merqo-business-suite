@@ -5,7 +5,7 @@
  *
  * All values are integer paise; no floating point is persisted.
  */
-import { roundToPaise, percentPaise, type Paise } from './money';
+import { roundToPaise, fromPaise, percentPaise, type Paise } from './money';
 
 export interface SaleFinSettings {
   tax_enabled: boolean;
@@ -31,7 +31,9 @@ export interface SaleTotals {
 export function taxForBase(base: Paise, fin: SaleFinSettings): Paise {
   if (!fin.tax_enabled || fin.tax_rate_bps <= 0 || base <= 0) return 0;
   return fin.tax_inclusive_prices
-    ? roundToPaise((base * fin.tax_rate_bps) / (10000 + fin.tax_rate_bps))
+    // base is already integer paise; base·bps/(10000+bps) is the tax in
+    // paise — rounding once is all that's needed (NO ×100).
+    ? Math.round((base * fin.tax_rate_bps) / (10000 + fin.tax_rate_bps))
     : percentPaise(base, fin.tax_rate_bps);
 }
 
@@ -77,7 +79,9 @@ export function previewSaleTotals(
   fin: SaleFinSettings,
   orderDiscountPaise: Paise
 ): SaleTotals {
-  const gross = lines.map((l) => roundToPaise(l.unitPricePaise * l.quantity));
+  // Same formula as the domain (computeLines): paise → taka × qty → paise,
+  // so the preview and the recorded bill can never diverge (§120).
+  const gross = lines.map((l) => roundToPaise(fromPaise(l.unitPricePaise) * l.quantity));
   const lineDisc = lines.map((l) => l.discountPaise ?? 0);
   const bases = gross.map((g, i) => Math.max(0, g - lineDisc[i]));
   const alloc = prorateOrderDiscount(bases, Math.min(orderDiscountPaise, bases.reduce((s, b) => s + b, 0)));

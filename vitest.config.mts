@@ -7,7 +7,10 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      '@shared': path.join(root, 'src/shared')
+      '@shared': path.join(root, 'src/shared'),
+      // Node tests import the handler registry; the Electron bridge itself
+      // is a no-op stub (enforcement is exercised via dispatchIpc directly).
+      electron: path.join(root, 'tests/stubs/electron.ts')
     }
   },
   test: {

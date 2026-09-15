@@ -13,7 +13,7 @@ import { tx } from '../db/connection';
 import { generateId } from '../../shared/ids';
 import { recordAudit } from './auditService';
 import { getSetting } from '../repos/settings';
-import { ValidationError, UnauthorizedError, NotFoundError, ConflictError } from '../errors';
+import { ValidationError, UnauthorizedError, NotFoundError, ConflictError, PermissionDeniedError } from '../errors';
 import { hashPassword, verifyPassword } from './setupService';
 import { ROLE_CATALOG, DEFAULT_ROLE_PERMISSIONS, PERMISSIONS, type RoleKey } from '../../shared/permissions';
 
@@ -356,7 +356,10 @@ export function changePassword(
 export function requirePermission(user: AuthUser, permission: string): void {
   if (user.isOwner) return;
   if (!user.permissions.includes(permission)) {
-    throw new UnauthorizedError('এই কাজটি করার অনুমতি নেই।');
+    // PERMISSION_DENIED (not UNAUTHORIZED): the session is valid, the role
+    // simply lacks this action. The renderer uses the code to decide
+    // "show a no-access state" vs "force re-login".
+    throw new PermissionDeniedError(permission);
   }
 }
 

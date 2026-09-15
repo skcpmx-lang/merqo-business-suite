@@ -6,6 +6,7 @@
 import type { DB } from './connection';
 import { m0001_init } from './migrations/0001_init';
 import { m0002_seed_system, seedPermissions } from './migrations/0002_seed_system';
+import { m0003_session_tokens } from './migrations/0003_session_tokens';
 
 export interface Migration {
   version: number;
@@ -15,7 +16,8 @@ export interface Migration {
 
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: 'init_schema', sql: m0001_init },
-  { version: 2, name: 'seed_system_catalog', sql: m0002_seed_system }
+  { version: 2, name: 'seed_system_catalog', sql: m0002_seed_system },
+  { version: 3, name: 'session_tokens_idempotency', sql: m0003_session_tokens }
 ];
 
 export function runMigrations(db: DB): number {

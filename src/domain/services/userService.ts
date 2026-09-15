@@ -80,8 +80,9 @@ export function login(
   const sessionId = generateId();
   const token = randomBytes(32).toString('hex');
   db.prepare(
-    `INSERT INTO sessions (id, business_id, user_id, started_at, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)`
-  ).run(sessionId, businessId, user.id, now, now);
+    `INSERT INTO sessions (id, business_id, user_id, started_at, status, created_at, token_hash)
+     VALUES (?, ?, ?, ?, 'active', ?, ?)`
+  ).run(sessionId, businessId, user.id, now, now, hashToken(token));
 
   db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now, user.id);
   recordAudit(db, {
@@ -162,6 +163,51 @@ function sha256hex(input: string): string {
   // lazy require to avoid crypto import cycles at module init in some bundlers
   const { createHash } = require('node:crypto');
   return createHash('sha256').update(input).digest('hex');
+}
+
+export function hashToken(token: string): string {
+  return sha256hex(token);
+}
+
+/**
+ * Resolve a bearer token to its active session user (DB-backed, survives
+ * app restarts). Returns null when the token is unknown or the session is
+ * ended. Used by the IPC layer for every business request.
+ */
+export function resolveSession(db: DB, token: string): SessionUser | null {
+  if (!token) return null;
+  const row = db
+    .prepare(
+      `SELECT s.id AS session_id, s.business_id, u.id AS user_id, u.name, u.username,
+              u.role_id, u.is_owner, r.name AS role_name
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN roles r ON r.id = u.role_id
+       WHERE s.token_hash = ? AND s.status = 'active'`
+    )
+    .get(hashToken(token)) as
+    | {
+        session_id: string; business_id: string; user_id: string;
+        name: string; username: string; role_id: string;
+        is_owner: number; role_name: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  const permissions = (db
+    .prepare('SELECT permission_key FROM role_permissions WHERE role_id = ?')
+    .all(row.role_id) as { permission_key: string }[])
+    .map((r) => r.permission_key);
+  return {
+    id: row.user_id,
+    businessId: row.business_id,
+    name: row.name,
+    username: row.username,
+    roleId: row.role_id,
+    roleName: row.role_name ?? '—',
+    isOwner: row.is_owner === 1,
+    permissions,
+    sessionId: row.session_id
+  };
 }
 
 export interface UserView {

@@ -1,0 +1,63 @@
+/* MERQO design tokens — light theme only (premium, calm, Bangla-first). */
+:root {
+  /* palette */
+  --c-bg: #f4f7f5;
+  --c-surface: #ffffff;
+  --c-surface-2: #f8faf9;
+  --c-border: #e2e9e5;
+  --c-border-strong: #cdd8d2;
+
+  --c-ink: #182420;
+  --c-ink-2: #48584f;
+  --c-ink-3: #7b8a82;
+
+  --c-primary: #0f7a5c;
+  --c-primary-strong: #0c6349;
+  --c-primary-soft: #e3f2ec;
+  --c-primary-ink: #ffffff;
+
+  --c-sidebar: #10312a;
+  --c-sidebar-ink: #cfe0d9;
+  --c-sidebar-ink-dim: #8aa79c;
+  --c-sidebar-active: #1b4a3e;
+  --c-sidebar-accent: #34d39a;
+
+  --c-warn: #b45309;
+  --c-warn-soft: #fdf1e0;
+  --c-danger: #b3261e;
+  --c-danger-soft: #fdeceb;
+  --c-success: #15803d;
+  --c-success-soft: #e8f5ec;
+  --c-info: #1d4ed8;
+  --c-info-soft: #e8eefc;
+
+  /* shape */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(20, 33, 28, 0.05);
+  --shadow-md: 0 2px 6px rgba(20, 33, 28, 0.08), 0 1px 2px rgba(20, 33, 28, 0.05);
+  --shadow-lg: 0 12px 32px rgba(20, 33, 28, 0.16), 0 4px 10px rgba(20, 33, 28, 0.08);
+
+  /* type */
+  --font: "Nirmala UI", "Noto Sans Bengali", "Vrinda", "Segoe UI", system-ui, sans-serif;
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs-md: 13.5px;
+  --fs-lg: 15px;
+  --fs-xl: 17px;
+  --fs-2xl: 21px;
+  --fs-3xl: 26px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 28px;
+
+  --sidebar-w: 232px;
+  --topbar-h: 54px;
+}

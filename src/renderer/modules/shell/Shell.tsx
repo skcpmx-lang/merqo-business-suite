@@ -1,11 +1,10 @@
 /** Application shell: sidebar navigation + topbar (global search,
  *  notifications) + module router. */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   LayoutDashboard, ShoppingCart, Package, Boxes, ShoppingBag, ReceiptText,
-  Users, Truck, Wallet, Landmark, ClipboardList, Smartphone, BarChart3,
-  DatabaseBackup, UserCog, Settings, LogOut, Search, Bell, CircleDollarSign,
-  ArrowLeftRight, FileSpreadsheet, FolderOpen
+  Users, Truck, Landmark, ClipboardList, Smartphone, BarChart3,
+  DatabaseBackup, UserCog, Settings, LogOut, Search, Bell, CircleDollarSign
 } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { api } from '../../lib/api';
@@ -36,7 +35,7 @@ export type ModuleKey =
 interface NavItem {
   key: ModuleKey;
   label: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   perm?: string;
   group: string;
 }
@@ -265,7 +264,7 @@ export function Shell() {
 
   const initial = (user?.name ?? 'M').trim().charAt(0);
 
-  const pages: Record<ModuleKey, React.ReactNode> = {
+  const pages: Record<ModuleKey, ReactNode> = {
     dashboard: <Dashboard />,
     pos: <Pos />,
     products: <Products />,
@@ -311,7 +310,7 @@ export function Shell() {
         </div>
 
         {groups.map((g) => (
-          <React.Fragment key={g}>
+          <Fragment key={g}>
             <div className="nav-group">{g}</div>
             {visibleNav
               .filter((n) => n.group === g)
@@ -325,7 +324,7 @@ export function Shell() {
                   {n.label}
                 </button>
               ))}
-          </React.Fragment>
+          </Fragment>
         ))}
 
         <div className="sidebar-foot">

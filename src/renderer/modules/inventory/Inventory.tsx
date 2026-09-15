@@ -1,12 +1,12 @@
 /** Inventory — stock levels, audited adjustments, movement history,
  *  reconcile check. */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Boxes, ArrowRightLeft, History, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
 import { api, errMsg, idemKey } from '../../lib/api';
 import type { Row } from '@shared/ipc';
-import { Button, DataTable, type Col, StatCard, Modal, Field, TextInput, SelectInput, useToast, Empty, fmtDateTime, Bn, Tabs } from '../../ui';
+import { Button, DataTable, type Col, StatCard, Modal, Field, TextInput, SelectInput, useToast, fmtDateTime, Bn, Tabs } from '../../ui';
 
 const ADJUST_TYPES: { key: string; label: string }[] = [
   { key: 'increase', label: 'বৃদ্ধি (গোডোয়ান ভুল)' },
@@ -27,7 +27,7 @@ export function Inventory() {
   const [reconcileResult, setReconcileResult] = useState<{ ok: boolean; mismatches: Row[] } | null>(null);
 
   const { data: summary } = useAsync(async () => (await api.stock.summary(token)) as Row, [token]);
-  const { data, busy, reload } = useAsync(
+  const { data, reload } = useAsync(
     async () =>
       await api.products.query(token, {
         search: search || undefined,

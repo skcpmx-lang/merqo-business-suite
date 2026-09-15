@@ -4,7 +4,7 @@
  *  - split payments, credit sales with due tracking, hold/resume carts
  *  - receipt preview after sale
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScanBarcode, Plus, Minus, Trash2, PauseCircle, PlayCircle,
   Banknote, Smartphone, Landmark, FileText, ReceiptText, User, X, PackagePlus, AlertTriangle
@@ -262,10 +262,6 @@ export function Pos() {
       if (ex) return ps.map((p) => (p.method === method ? { ...p, amountTaka: p.amountTaka + taka } : p));
       return [...ps, { method, amountTaka: taka }];
     });
-  }
-
-  function clearPayment(method: string) {
-    setPayments((ps) => ps.filter((p) => p.method !== method));
   }
 
   async function completeSale(overrideCreditLimit = false, key: string = idemKey()) {

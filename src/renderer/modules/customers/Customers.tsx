@@ -1,5 +1,5 @@
 /** Customers — credit ledger, dues, collection. */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Users, Plus, Search, Pencil, Banknote, BookOpen } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
@@ -19,7 +19,7 @@ export function Customers() {
   const [ledger, setLedger] = useState<Row | null>(null);
   const [collecting, setCollecting] = useState<Row | null>(null);
 
-  const { data, busy, reload } = useAsync(
+  const { data, reload } = useAsync(
     async () =>
       await api.customers.list(token, { search: search || undefined, onlyWithDue: onlyDue || undefined, limit: 50, offset: page * 50 }),
     [token, search, onlyDue, page]

@@ -34,7 +34,7 @@ export function Purchases() {
   const [creating, setCreating] = useState(false);
   const [detail, setDetail] = useState<Row | null>(null);
 
-  const { data, busy, reload } = useAsync(
+  const { data, reload } = useAsync(
     async () =>
       await api.purchases.query(token, { search: search || undefined, limit: 50, offset: page * 50 } as never),
     [token, search, page]
@@ -291,7 +291,7 @@ function PurchaseDetailModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { user, can } = useSession();
+  const { can } = useSession();
   const toast = useToast();
   const [returning, setReturning] = useState(false);
   const [retQty, setRetQty] = useState<Record<string, number>>({});

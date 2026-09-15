@@ -9,6 +9,57 @@ item (Phases 1–8, 13–15, 17-on-Windows, 20) is **NOT TESTED** in this
 environment (Linux sandbox — no Windows runner, no GUI, no printer, no scanner).
 Nothing marked NOT TESTED has been converted to PASS, and no `.exe` is claimed.
 
+**Round 2 (2026-09-16): full static release audit (31 sections) completed** —
+see the audit matrix below. Feature freeze in effect since this round; only
+release-critical fixes were made (unused dependencies removed, dead code
+removed, import file-size guard added, glossary regression guard added,
+README language defects fixed).
+
+---
+
+## Static release audit — Round 2, section by section
+
+| # | Section | Verdict | Notes |
+|---|---|---|---|
+| 1 | Full source audit | **PASS** | 0 TODO/FIXME/HACK; 7 `console.error` — all main-process production diagnostics (integrity, restore, IPC unhandled, auto-backup, print, DB close) — kept deliberately; 0 localhost; 0 dev-only paths in production code (single `MERQO_DEV_URL` dev-env branch, unset in production, documented); dead code + unused imports removed this round (16 files); unused runtime deps `jsbarcode`, `qrcode`, `@types/qrcode` removed |
+| 2 | Secret scan | **PASS** | No API keys/passwords/tokens/private keys/.env in the repo; passwords are salted+hashed in DB; only test fixtures use a test password (test-only) |
+| 3 | Dependency audit | **PASS** | Runtime deps: `better-sqlite3` (MIT; native, no net, needs electron-rebuild — handled), `lucide-react` (ISC; icons, no net), `react`/`react-dom` (MIT; no net). No internet, no accounts, no paid services anywhere |
+| 4 | Offline test | **PASS** | Zero network calls in `src/` (no fetch/XHR/axios/websocket); all core operations are local SQLite + local files |
+| 5 | IPC final audit (131) | **PASS** | Every channel: session required (except AUTH_STATUS/AUTH_LOGIN/SETUP_CREATE by design), permission mapped, business scope from the resolved session (`user.businessId` — never client-supplied), inputs validated in the domain, errors serialized to `{code,message}`. Sensitive outputs masked: dashboard profit/cost/balance fields (Phase-16 fix), P&L report (`profit.view`), stock cost (`stock.viewCost`), audit (`audit.view`) |
+| 6 | Business-scope isolation | **PASS** | Systematic scan of all SQL: every query touching a business table starts from `business_id = ?` (or inherits scope from an already-validated parent document: `getSale`/`getProductDetail`/`updateUser` verify business first); cross-business access tested (print test: other business's sale → NOT_FOUND) |
+| 7 | Financial domain audit | **PASS** | All money is integer paise; single authoritative conversion layer (`shared/money.ts`); zero raw `×100/÷100` in the domain; no float arithmetic on money; P0 ×100 bugs fixed + regression-tested (money-precision 4/4); weighted-avg + COGS formulas single-implemented in `inventoryService` |
+| 8 | Inventory domain audit | **PASS** | Exactly 3 `UPDATE inventory` sites in the whole domain — `receive`/`issue`/`adjustStock` — each writes its `inventory_movements` row in the same transaction; reconcile tests + 10k-scale consistency verify movements ≡ balance |
+| 9 | Ledger audit | **PASS** | Event-sourced ledgers (`customer_transactions`/`supplier_transactions`); balances denormalized in-tx with every event; running balance order deterministic (`created_at, id`); e2e invariants: due ≡ Σ customer events, payable ≡ Σ supplier events |
+| 10 | Account audit | **PASS** | Single funnel `post()`; kinds (cash/bank/mfs/other) never mixed — payment method resolves to the correct kind; internal transfers post `transfer_in/out` (never revenue); MFS agent wallets are separate from MFS payment accounts (`mfs_wallets` vs `accounts.kind='mfs'`), settled via `mfs_cash_in/out`; MFS reconciliation tested |
+| 11 | Status audit | **PASS** | One vocabulary per entity: sales `completed/partially_refunded/refunded/voided` (UI badges, domain, report filters all agree); held carts `held/resumed/cancelled`; batches `active/depleted`; shifts `open/closed`; sessions `active/ended`; backups `verified/failed/missing/deleted`; products/customers/suppliers `active/inactive/deleted` |
+| 12 | Return audit | **PASS** | Partial/full/exact-quantity returns tested (sale + purchase); exact remaining quantity returnable (epsilon on the correct side); due/payable decremented in-tx; stock restored via `receive`; final status via SUM of non-voided returns; over-return blocked |
+| 13 | Date range audit | **PASS** | `resolveRange` is fully local-timezone (start/end of local day, inclusive); report filters use `date >= from AND date <= to` on the same local boundaries — dashboard and reports share `resolveRange`; day/week/month bucketing uses SQLite `localtime` modifier (a UTC+6 morning sale lands in the correct local day) |
+| 14 | Import safety | **PASS** | Preview validates before any commit; errors listed per-row (capped); duplicate SKU/barcode, invalid numbers, missing fields all rejected pre-commit (import tests); Bangla data round-trips; **new:** 25 MB file-size guard prevents renderer freeze/OOM on huge files |
+| 15 | Backup safety | **PASS** | WAL checkpoint (TRUNCATE) before copy → consistent snapshot; SHA-256 + registry + audit in one tx; restore requires hash match AND `PRAGMA quick_check`; swap is an atomic `rename` after DB close, stale `-wal/-shm` of the live DB removed so they can't replay onto the restored file; rename failure leaves the live DB untouched; completion audit via marker file |
+| 16 | Audit log immutability | **PASS** | Sole write path is INSERT in `recordAudit` (same tx as the action); no UPDATE/DELETE statement exists anywhere; no IPC channel can edit/delete audit rows or forge user/timestamp (actor identity from the resolved session) |
+| 17 | Role spoofing | **PASS** | Permissions derived from the resolved session on every call (fresh `role_permissions` read); client flags stripped server-side — proven by live role-narrowing tests (discount/price/credit override); profit/cost/account visibility masked at the dashboard |
+| 18 | UI string final audit | **PASS** | Full re-sweep this round: 0 rejected terms in `src/renderer`; glossary cross-checked; new `restore` entry added to `glossary.ts` (was missing); `একশন`→`অ্যাকশন` fixed; README language defects fixed (typos: পদ্ধায়→পদ্ধতি, অমুছ, পিচেস, আশকা, সংস্করন; term drift: লিডজার/দেয়াদায়ী/ট্রানজেকশন/আডেমেন্ট → canonical terms) |
+| 19 | Language regression guard | **PASS (new)** | `tests/unit/bangla-glossary.test.ts` — fails the build if any rejected term (মজুদ, গ্রাহক, সরবরাহকারী, রিটার্ন, আপডেট, আমদানি, রপ্তানি, শেষ স্টক, একশন, ভ্যালিডেশন, পুনঃ, ক্যান্সেল, ডিলিট, এডিট) reappears in `src/renderer`, or if a canonical term disappears from `glossary.ts` |
+| 20 | Production build audit | **PASS** | `dist:win` = build + electron-builder; esbuild bundles main/preload (no sourcemaps, native modules external); Vite renderer build; `package.json` main → `dist-electron/main/index.js`; name `merqo` / productName `MERQO`; version 1.0.0 consistent across package.json/README/release notes; `buildResources/icon.ico` present; no dev-only env in production path |
+| 21 | Windows path safety | **PASS** | All paths via `path.join`/`path.dirname`; DB `app.getPath('userData')/merqo/merqo.db`; backups `process.env.HOME \|\| USERPROFILE` fallback; PDF/save dialogs `app.getPath('downloads')`; no `/home`, `C:\`, or Linux-only assumptions in `src/` |
+| 22 | User data location | **PASS (documented)** | Business DB: `%APPDATA%/merqo/merqo/merqo.db` (outside the install dir → survives uninstall; `deleteAppDataOnUninstall: false`); backups: `%USERPROFILE%/MERQO/backups` (user-settable in settings). Behavior on real Windows = NOT TESTED (Phase 3) |
+| 23 | Print architecture review | **PASS (static)** | `printAuth(token)` = session + `invoices.view` + business-scoped document lookup on every print channel; paper sizes 57mm/80mm/A4 from settings; template selection by document type; print errors → `PRINT_ERROR`/`VALIDATION` codes |
+| 24 | PDF page size review | **PASS (static)** | `printToPDF` pageSize in INCHES: A4 preset; 57mm → 2.24×20; 80mm → 3.15×20 (tall page keeps a receipt on one page); pixel→inch conversion done once at this boundary. Physical rendering = NOT TESTED |
+| 25 | Responsiveness static review | **PASS (static)** | Only absolute-positioned elements are search icons inside sized inputs; no fixed widths > 400px; no overflow-hidden around content containers; modal sizing via `size` prop. Real-DPI visual check = NOT TESTED |
+| 26 | Accessibility static review | **PASS with notes** | All primary actions are real `<button>`; 4 clickable-divs are stopPropagation wrappers (harmless), 1 is an optional provider filter chip (works with mouse; keyboard can't toggle — minor, does not prevent normal use); form labels rendered via `Field` but not programmatically associated (no htmlFor) — minor, documented; contrast via CSS variables (light theme). Full keyboard/DPI audit = NOT TESTED |
+| 27 | Artifact cleanliness | **PASS** | `dist/` + `dist-electron/` contain no test fixtures, no credentials, no demo data (scanned for `টেলে-টেস্ট`, `admin1234`, `makeEnv` → 0 hits) |
+| 28 | Documentation audit | **PASS** | README (v1.0.0, migrations 0001→0004 corrected, language fixed, release-status pointer added), `docs/QA_REPORT.md`, `docs/BANGLA_GLOSSARY.md`, `docs/RELEASE_NOTES.md` now agree on version, tested/not-tested state, build process, limitations; no premature Windows-validated claims |
+| 29 | Final test requirement | **PASS** | After this round's fixes: tsc clean (both configs), **vitest 114/114** (14 files, +2 guard tests), vite build clean |
+| 30 | Feature freeze | **IN EFFECT** | No features added this round; only release-critical/security/language/packaging fixes |
+| 31 | Final status | **NOT MET YET** | Unchanged — requires real Windows evidence (see NOT TESTED table) |
+
+### Known limitations (static, documented — none block packaging, all visible to users as minor)
+
+1. Failed restore swap: app relaunches on the live DB with the failure logged; the user is not shown an explicit error dialog (data is never harmed).
+2. A backup whose registry insert fails after the file copy leaves an untracked file (never listed, never restored from).
+3. Form labels are visually adjacent to inputs but not programmatically associated (screen-reader limitation; the app targets mouse/keyboard shop use).
+4. Provider filter chips on the MFS screen are mouse-only.
+
 ---
 
 ## Phase-by-phase matrix
@@ -65,6 +116,16 @@ Nothing marked NOT TESTED has been converted to PASS, and no `.exe` is claimed.
 
 ## Defect log (severity · symptom · root cause · fix · verifying test)
 
+### Found & fixed in the Round-2 static audit
+
+| Sev | Defect | Symptom | Root cause | Fix | Verified by |
+|---|---|---|---|---|---|
+| P2 | Import could freeze/OOM the renderer on a huge CSV | Selecting a multi-hundred-MB CSV read + parsed the whole file in memory | `readFile` had no size guard | 25 MB cap with a Bangla error toast | code review (guard is renderer-side, before IPC) |
+| P2 | Unused runtime dependencies shipped (`jsbarcode`, `qrcode`) | Bloat + supply-chain surface, zero usage | Leftover planned features (no barcode/QR rendering implemented) | Removed from `package.json` | `grep` 0 imports; build + 114/114 green |
+| P2 | Dead code / unused imports across 16 renderer files | Maintenance noise; 1 dead function (`clearPayment`), 3 dead props, 9 unused icons/hooks | Incremental development | Removed (no behavior change) | `tsc --noUnusedLocals --noUnusedParameters` now clean |
+| P2 | `glossary.ts` missing the canonical `restore` term | Glossary incomplete vs spec-listed concept | Oversight | `restore: 'পুনরুদ্ধার'` added | new glossary guard test |
+| P2 | README language defects | Typos (পদ্ধায়, অমুছ, পিচেস, আশকা, সংস্করন) + term drift (লিডজার, দেয়াদায়ী, ট্রানজেকশন, আডেমেন্ট) + stale migration count (0001→0003) | Pre-audit copy | Rewritten to canonical terms; 0001→0004; release-status pointer added | doc review |
+
 ### Found & fixed this release-gate session
 
 | Sev | Defect | Symptom | Root cause | Fix | Verified by |
@@ -95,13 +156,15 @@ Nothing marked NOT TESTED has been converted to PASS, and no `.exe` is claimed.
 ```
 npx tsc --noEmit -p tsconfig.json        # PASS (0 errors)
 npx tsc --noEmit -p tsconfig.node.json   # PASS (0 errors)
-npx vitest run                           # PASS 112/112 (13 files)
+npx vitest run                           # PASS 114/114 (14 files)
 npx vite build                           # PASS (renderer bundle)
+npx tsc --noEmit -p tsconfig.json --noUnusedLocals --noUnusedParameters
+                                         # PASS (dead-code guard, Round 2)
 ```
 
 Test inventory: ipc-security 17 (incl. phase-16 matrix), money-precision 4,
-perf-10k 6, print 6, e2e shop-day 12, plus unit/integration sale/purchase/
-mfs/import/search suites.
+perf-10k 6, print 6, bangla-glossary guard 2 (new), e2e shop-day 12, plus
+unit/integration sale/purchase/mfs/import/search suites.
 
 ## Release decision
 

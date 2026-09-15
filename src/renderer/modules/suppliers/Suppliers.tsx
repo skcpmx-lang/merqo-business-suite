@@ -1,5 +1,5 @@
 /** Suppliers — payable ledger, payments. */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Truck, Plus, Search, Pencil, Banknote, BookOpen } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';

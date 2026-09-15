@@ -1,6 +1,6 @@
 /** First-run setup wizard — creates the business workspace atomically.
  *  No fake data is created: only what the user types (§128). */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { BrandMark } from '../../App';
 import { Button, Field, MoneyInput, TextInput, SelectInput } from '../../ui';
@@ -13,7 +13,7 @@ const STEPS = ['ব্যবসার তথ্য', 'প্রাথমিক �
 
 export function SetupWizard() {
   const toast = useToast();
-  const { login, business } = useSession();
+  const { login } = useSession();
   const [step, setStep] = useState(0);
 
   // step 1

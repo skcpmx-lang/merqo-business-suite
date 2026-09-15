@@ -24,7 +24,6 @@ export function Shift() {
         token={token}
         shift={openShift}
         onClose={() => setClosing(true)}
-        onOpenedChange={reloadOpen}
       />
     ) : (
       <div>
@@ -81,9 +80,9 @@ export function Shift() {
   );
 }
 
-function OpenShiftPanel({ token, shift, onClose, onOpenedChange }: { token: string; shift: Row; onClose: () => void; onOpenedChange: () => void }) {
+function OpenShiftPanel({ token, shift, onClose }: { token: string; shift: Row; onClose: () => void }) {
   const { can } = useSession();
-  const { data, reload } = useAsync(
+  const { data } = useAsync(
     async () => await api.shift.cashSummary(token, (shift.opened_at as number) ?? Date.now(), Date.now()),
     [token, shift.opened_at]
   );

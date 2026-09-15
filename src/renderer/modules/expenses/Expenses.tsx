@@ -1,5 +1,5 @@
 /** Expenses — record shop spending by category, list with filters. */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ClipboardList, Plus, Search } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
@@ -97,17 +97,6 @@ export function Expenses() {
             setAdding(false);
             reload();
           }}
-          onAddCategory={async (name) => {
-            try {
-              await api.expenses.categories.create(token, name);
-              setNewCat('');
-              setShowCatModal(false);
-              void reloadCats();
-            } catch (e) {
-              toast('error', 'ক্যাটাগরি তৈরি হয়নি', errMsg(e));
-            }
-          }}
-          onOpenCategoryModal={() => setShowCatModal(true)}
         />
       )}
 
@@ -155,15 +144,11 @@ export function Expenses() {
 function ExpenseFormModal({
   cats,
   onClose,
-  onSaved,
-  onAddCategory,
-  onOpenCategoryModal
+  onSaved
 }: {
   cats: Row[];
   onClose: () => void;
   onSaved: () => void;
-  onAddCategory: (name: string) => void;
-  onOpenCategoryModal: () => void;
 }) {
   const { user } = useSession();
   const toast = useToast();

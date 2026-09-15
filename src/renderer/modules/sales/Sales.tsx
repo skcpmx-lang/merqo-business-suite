@@ -1,6 +1,6 @@
 /** Sales — ledger of all sales: view detail, void (with restock/reversal),
  *  process sales returns. */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ReceiptText, Search, Ban, PackageOpen, FileText } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
@@ -10,7 +10,7 @@ import { Button, DataTable, type Col, Modal, Field, TextInput, Money, useToast, 
 import { paymentMethodLabel } from '@shared/payments';
 
 export function Sales() {
-  const { user, can } = useSession();
+  const { user } = useSession();
   const toast = useToast();
   const token = user!.token;
   const [search, setSearch] = useState('');
@@ -19,7 +19,7 @@ export function Sales() {
   const [voiding, setVoiding] = useState<Row | null>(null);
   const [voidReason, setVoidReason] = useState('');
 
-  const { data, busy, reload } = useAsync(
+  const { data, reload } = useAsync(
     async () =>
       await api.sales.query(token, { search: search || undefined, limit: 50, offset: page * 50 } as never),
     [token, search, page]
@@ -143,7 +143,7 @@ function SaleDetailModal({
   onChanged: () => void;
   onVoid: () => void;
 }) {
-  const { user, can } = useSession();
+  const { can } = useSession();
   const toast = useToast();
   const [returning, setReturning] = useState(false);
   const [retQty, setRetQty] = useState<Record<string, number>>({});

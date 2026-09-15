@@ -1,13 +1,13 @@
 /** Users & permissions — profile, user management (owner), role
  *  permission sets (owner), and the immutable audit trail. */
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { UserPlus, ScrollText, KeyRound, Pencil, Lock } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
 import { api, errMsg, idemKey } from '../../lib/api';
 import type { Row, LoginResult } from '@shared/ipc';
 import { Button, Modal, Field, TextInput, SelectInput, useToast, DataTable, type Col, fmtDateTime, Bn, Tabs } from '../../ui';
-import { PERMISSIONS, ROLE_CATALOG, type RoleKey } from '../../../shared/permissions';
+import { PERMISSIONS, ROLE_CATALOG } from '../../../shared/permissions';
 
 const PERM_LABELS: Record<string, string> = Object.fromEntries(PERMISSIONS.map((p) => [p.key, p.label]));
 
@@ -24,7 +24,7 @@ interface UserView {
 }
 
 export function UsersAdmin() {
-  const { user, can } = useSession();
+  const { user } = useSession();
   const token = user!.token;
   const isOwner = user!.isOwner;
   const [tab, setTab] = useState('profile');
@@ -427,7 +427,7 @@ function RolesPanel({ token }: { token: string }) {
 }
 
 function AuditLog({ token }: { token: string }) {
-  const { data, reload } = useAsync(async () => (await api.audit.query(token, { limit: 100 })) as { rows: Row[]; total: number }, [token]);
+  const { data } = useAsync(async () => (await api.audit.query(token, { limit: 100 })) as { rows: Row[]; total: number }, [token]);
   const rows = data?.rows ?? [];
   const cols: Col<Row>[] = [
     { key: 'created_at', label: 'সময়', render: (r) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDateTime((r.created_at as number) ?? null)}</span> },

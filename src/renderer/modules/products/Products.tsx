@@ -1,7 +1,7 @@
 /** Products — master data with barcodes, categories, brands, price audit. */
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Package, Plus, Search, Pencil, Trash2, Tag, History, AlertTriangle, Boxes
+  Package, Plus, Search, Pencil, Trash2, History
 } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
@@ -52,7 +52,7 @@ export function Products() {
   const { data: units } = useAsync(async () => (await api.master.units.list(token)) as Row[], [token]);
 
   const limit = 50;
-  const { data, busy, reload, setData } = useAsync(
+  const { data, reload } = useAsync(
     async () => await api.products.query(token, { search: search || undefined, categoryId: categoryId || undefined, limit, offset: page * limit }),
     [token, search, categoryId, page]
   );
@@ -210,7 +210,7 @@ function ProductFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { user, can } = useSession();
+  const { user } = useSession();
   const toast = useToast();
   const token = user!.token;
   const isEdit = !!product;

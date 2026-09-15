@@ -29,6 +29,7 @@ export const T = {
   notifications: 'নোটিফিকেশন',
   usersSecurity: 'ব্যবহারকারী ও নিরাপত্তা',
   backup: 'ব্যাকআপ',
+  restore: 'পুনরুদ্ধার',
   settings: 'সেটিংস',
   setup: 'সেটআপ',
   login: 'লগইন',

@@ -1,6 +1,6 @@
 /** Data center — backup & restore, CSV import with preview, CSV export,
  *  database integrity check. */
-import React, { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   DatabaseBackup, Download, Upload, ShieldCheck, RefreshCw, FileText, AlertTriangle, CheckCircle2, Lock
 } from 'lucide-react';
@@ -12,7 +12,7 @@ import type { Row, ImportPreviewResult, ImportResult } from '@shared/ipc';
 import { Button, SelectInput, useToast, fmtDateTime, Bn, Tabs, ConfirmDialog, Empty } from '../../ui';
 
 export function DataCenter() {
-  const { user, can } = useSession();
+  const { user } = useSession();
   const token = user!.token;
   const [tab, setTab] = useState('backup');
   const [importEntity, setImportEntity] = useState<ImportEntity>('products');
@@ -49,7 +49,7 @@ export function DataCenter() {
 /* ---------------- backup ---------------- */
 
 function BackupPanel({ token }: { token: string }) {
-  const { user, can } = useSession();
+  const { can } = useSession();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState<Row | null>(null);
@@ -221,6 +221,12 @@ function ImportPanel({ token, entity, onEntity }: { token: string; entity: Impor
   }
 
   function readFile(f: File) {
+    // Hard cap: importing multi-hundred-MB CSVs would freeze the renderer
+    // (full file is parsed in memory). 25 MB ≈ 200k+ rows of products.
+    if (f.size > 25 * 1024 * 1024) {
+      toast('error', 'ফাইল খুব বড়', '২৫ মেগাবাইটের বেশি ফাইল ইমপোর্ট করা যায় না। ছোট করে আবার চেষ্টা করুন।');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       let text = String(reader.result ?? '');

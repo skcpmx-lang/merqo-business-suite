@@ -1,5 +1,5 @@
 /** Accounts — balances, ledger drill-in, internal transfers. */
-import React, { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Landmark, ArrowLeftRight } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { useAsync } from '../../lib/useAsync';
@@ -94,7 +94,7 @@ export function Accounts() {
 }
 
 function AccountLedgerModal({ token, account, onClose }: { token: string; account: Row; onClose: () => void }) {
-  const { data, reload } = useAsync(
+  const { data } = useAsync(
     async () => (await api.accounts.transactions(token, { accountId: account.id, limit: 200 })) as Row[],
     [token, account.id]
   );

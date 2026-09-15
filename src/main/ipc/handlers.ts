@@ -320,7 +320,14 @@ export const HANDLERS: HandlerDef[] = [
     channel: IPC.PRODUCTS_UPDATE, auth: true, permission: 'products.edit',
     run: (user, args) =>
       runIdempotent(args[0] as DB, user, (args[2] as string | undefined), args[1], () => {
-        updateProductSafe(args[0] as DB, { ...(args[1] as object), businessId: user.businessId, userId: user.id } as never);
+        const input = args[1] as { id: string; patch: Record<string, unknown>; priceChangeReason?: string; newBarcodes?: string[] };
+        updateProductSafe(args[0] as DB, {
+          businessId: user.businessId, userId: user.id,
+          productId: input.id,
+          patch: input.patch,
+          newBarcodes: input.newBarcodes,
+          priceChangeReason: input.priceChangeReason
+        } as never);
         return null;
       })
   },

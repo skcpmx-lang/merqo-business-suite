@@ -280,22 +280,22 @@ export interface MfsCreatedResult {
 export interface ImportPreviewRequest {
   entity: 'products' | 'customers' | 'suppliers';
   csv: string;
-  fieldMap?: Record<string, string>;
+  fieldMap: Record<string, number>;
 }
 
 export interface ImportPreviewResult {
   totalRows: number;
   validRows: number;
-  errorCount: number;
-  errors: { row: number; field: string; value: string; message: string }[];
-  preview: Row[];
+  errors: { row: number; field?: string; value?: string; message: string }[];
+  sample: Row[];
 }
 
 export interface ImportResult {
   jobId: string;
   imported: number;
   skipped: number;
-  errorCount: number;
+  failed: number;
+  errorFile: string | null;
 }
 
 export interface ShiftOpenRequest {
@@ -392,7 +392,7 @@ export interface MerqoApi {
     createReturn(token: string, req: Record<string, unknown>, idemKey?: string): Promise<Row>;
   };
   suppliers: {
-    list(token: string, q?: Record<string, unknown>): Promise<Row[]>;
+    list(token: string, q?: Record<string, unknown>): Promise<{ rows: Row[]; total: number }>;
     get(token: string, id: string): Promise<Row | null>;
     create(token: string, input: Record<string, unknown>): Promise<string>;
     update(token: string, input: Record<string, unknown>): Promise<void>;
@@ -400,7 +400,7 @@ export interface MerqoApi {
     ledger(token: string, id: string): Promise<Row[]>;
   };
   customers: {
-    list(token: string, q?: Record<string, unknown>): Promise<Row[]>;
+    list(token: string, q?: Record<string, unknown>): Promise<{ rows: Row[]; total: number }>;
     get(token: string, id: string): Promise<Row | null>;
     create(token: string, input: Record<string, unknown>): Promise<string>;
     update(token: string, input: Record<string, unknown>): Promise<void>;
@@ -426,7 +426,7 @@ export interface MerqoApi {
     getOpen(token: string): Promise<Row | null>;
     cashSummary(token: string, from: number, to: number): Promise<{ cashIn: number; cashOut: number }>;
     close(token: string, req: Record<string, unknown>, idemKey?: string): Promise<CloseShiftResult>;
-    list(token: string, q?: Record<string, unknown>): Promise<{ rows: Row[]; total: number }>;
+    list(token: string, q?: Record<string, unknown>): Promise<Row[]>;
     dailyClosing(token: string): Promise<Row>;
   };
   mfs: {

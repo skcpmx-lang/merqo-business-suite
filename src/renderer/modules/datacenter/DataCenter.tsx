@@ -28,7 +28,7 @@ export function DataCenter() {
 
       <Tabs
         tabs={[
-          { key: 'backup', label: 'ব্যাকআপ ও রিস্টোর' },
+          { key: 'backup', label: 'ব্যাকআপ ও পুনরুদ্ধার' },
           { key: 'import', label: 'আমদানি (CSV)' },
           { key: 'export', label: 'রপ্তানি (CSV)' },
           { key: 'health', label: 'ডাটাবেস পরীক্ষা' }
@@ -65,7 +65,7 @@ function BackupPanel({ token }: { token: string }) {
       <div className="card card-pad">
         <Empty
           title="ব্যাকআপের অধিকার নেই"
-          sub="মালিক বা অনুমোদিত ব্যব্য়ারকারিরা ব্যাকাপ নিতে/দেখতে পারবেন।"
+          sub="মালিক বা অনুমোদিত ব্যবহারকারীরা ব্যাকআপ নিতে/দেখতে পারবেন।"
           icon={<Lock size={22} />}
         />
       </div>
@@ -113,7 +113,7 @@ function BackupPanel({ token }: { token: string }) {
         <div className="card card-pad">
           <Empty
             title="এখনো কোনো ব্যাকআপ নেই"
-            sub="একটি ব্যাকআপ পুরো ডাটাবেসের ফাইল কপি — রিস্টোর করলে সব হিসাব আগের অবস্থায় ফিরে আসে।"
+            sub="একটি ব্যাকআপ পুরো ডাটাবেসের ফাইল কপি — পুনরুদ্ধার করলে সব হিসাব আগের অবস্থায় ফিরে আসে।"
             icon={<DatabaseBackup size={22} />}
             action={can('backup.create') ? <Button variant="primary" onClick={create}>প্রথম ব্যাকআপ নিন</Button> : undefined}
           />
@@ -141,7 +141,7 @@ function BackupPanel({ token }: { token: string }) {
                     <div className="tbl-row-actions">
                       <Button size="sm" variant="ghost" icon={<ShieldCheck size={13} />} onClick={() => void verify(b)}>যাচাই</Button>
                       {can('backup.restore') && (
-                        <Button size="sm" variant="outline" onClick={() => setRestoring(b)}>রিস্টোর</Button>
+                        <Button size="sm" variant="outline" onClick={() => setRestoring(b)}>পুনরুদ্ধার</Button>
                       )}
                     </div>
                   </td>
@@ -154,7 +154,7 @@ function BackupPanel({ token }: { token: string }) {
 
       {restoring && (
         <ConfirmDialog
-          title="ব্যাকআপ থেকে রিস্টোর করবেন?"
+          title="ব্যাকআপ থেকে পুনরুদ্ধার করবেন?"
           message={
             <>
               <p>
@@ -165,17 +165,17 @@ function BackupPanel({ token }: { token: string }) {
               </p>
             </>
           }
-          confirmLabel="রিস্টোর করুন"
+          confirmLabel="পুনরুদ্ধার করুন"
           danger
           onConfirm={async () => {
             try {
               const r = await api.backup.restore(token, String(restoring.id));
               setRestoring(null);
               if (r.restartRequired) {
-                toast('warn', 'রিস্টোর সম্পন্ন — অ্যাপ এখন বন্ধ হবে', 'আবার চালু হলে ডেটা পুনরায় লোড হবে।');
+                toast('warn', 'পুনরুদ্ধার সম্পন্ন — অ্যাপ এখন বন্ধ হবে', 'আবার চালু হলে ডেটা পুনরায় লোড হবে।');
               }
             } catch (e) {
-              toast('error', 'রিস্টোর হয়নি', errMsg(e));
+              toast('error', 'পুনরুদ্ধার হয়নি', errMsg(e));
               setRestoring(null);
             }
           }}
@@ -296,7 +296,7 @@ function ImportPanel({ token, entity, onEntity }: { token: string; entity: Impor
         <textarea
           className="textarea"
           style={{ minHeight: 130, fontFamily: 'Consolas, monospace', fontSize: 12 }}
-          placeholder={'নাম,ফোন,ভেদাম\nচিপস,০১১১১১১১,৩০'}
+          placeholder={'নাম,ফোন,বিক্রয় মূল্য\nচিপস,০১১১১১১১,৩০'}
           value={csv}
           onChange={(e) => {
             const v = e.target.value;
@@ -420,9 +420,9 @@ function ExportPanel({ token }: { token: string }) {
   const items: { key: 'products' | 'customers' | 'suppliers' | 'sales' | 'purchases'; label: string; sub: string }[] = [
     { key: 'products', label: 'পণ্য', sub: 'নাম, SKU, বারকোড, দাম, স্টক' },
     { key: 'customers', label: 'কাস্টমার', sub: 'নাম, ফোন, ঠিকানা, বকেয়া' },
-    { key: 'suppliers', label: 'সাপ্লায়ার', sub: 'নাম, ফোন, ঠিকানা, দেয়াদায়ী' },
-    { key: 'sales', label: 'বিক্রয়ের বিল', sub: 'রফারেন্স, তারিখ, পণ্য, মোট' },
-    { key: 'purchases', label: 'ক্রয়ের বিল', sub: 'রফারেন্স, তারিখ, সাপ্লায়ার, মোট' }
+    { key: 'suppliers', label: 'সাপ্লায়ার', sub: 'নাম, ফোন, ঠিকানা, প্রদেয়' },
+    { key: 'sales', label: 'বিক্রয়ের বিল', sub: 'রেফারেন্স, তারিখ, পণ্য, মোট' },
+    { key: 'purchases', label: 'ক্রয়ের বিল', sub: 'রেফারেন্স, তারিখ, সাপ্লায়ার, মোট' }
   ];
 
   return (
@@ -479,7 +479,7 @@ function HealthPanel({ token }: { token: string }) {
               {i}
             </div>
           ))}
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--c-ink-2)' }}>সবচেয়ে সাম্প্রতিক ব্যাকআপ থেকে রিস্টোর করার পরামর্শ দেওয়া হচ্ছে।</p>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--c-ink-2)' }}>সবচেয়ে সাম্প্রতিক ব্যাকআপ থেকে পুনরুদ্ধার করার পরামর্শ দেওয়া হচ্ছে।</p>
         </div>
       )}
       <div className="divider" />

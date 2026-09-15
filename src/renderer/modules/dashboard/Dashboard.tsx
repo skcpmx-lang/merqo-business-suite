@@ -135,7 +135,7 @@ export function Dashboard() {
           sub="বিল + অন্যান্য"
         />
         <StatCard
-          label={showProfit ? 'আজকের লাভ (খচরা)' : 'আজকের বিক্রয় (পূর্ববর্তী)'}
+          label={showProfit ? 'আজকের লাভ' : 'আজকের ক্রয়'}
           tone={showProfit ? 'green' : undefined}
           icon={<PiggyBank size={15} style={{ color: 'var(--c-success)' }} />}
           value={showProfit ? <Money paise={k.todayProfit} /> : <Money paise={k.todayPurchases} />}
@@ -178,19 +178,19 @@ export function Dashboard() {
 
       <div className="grid" style={{ gridTemplateColumns: '2fr 1fr', marginTop: 16 }}>
         <div>
-          <ChartCard title="বিক্রয় রেনজ (বাছাই করা সময়ে)" axis={data.salesTrend.map((d) => String(d.label))}>
+          <ChartCard title="বিক্রয়ের প্রবণতা (বাছাই করা সময়ে)" axis={data.salesTrend.map((d) => String(d.label))}>
             <BarChart data={data.salesTrend} format={fmtTaka} />
           </ChartCard>
           {showProfit && (
             <div style={{ height: 16 }} />
           )}
           {showProfit && (
-            <ChartCard title="লাভ (খচরা ও নিট)" axis={data.profitTrend.map((d) => String(d.label))}>
+            <ChartCard title="লাভ (মূল ও নিট)" axis={data.profitTrend.map((d) => String(d.label))}>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 150 }}>
                 {data.profitTrend.map((d, i) => {
                   const maxG = Math.max(1, ...data.profitTrend.map((x) => Math.max(x.gross, 0)));
                   return (
-                    <div key={i} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%' }} title={`${fmtDate(d.label)} — খচরা: ${fmtTaka(d.gross)}, নিট: ${fmtTaka(d.net)}`}>
+                    <div key={i} style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%' }} title={`${fmtDate(d.label)} — মূল: ${fmtTaka(d.gross)}, নিট: ${fmtTaka(d.net)}`}>
                       <div style={{ flex: 1, minHeight: 2, height: `${Math.max(2, (Math.max(d.gross, 0) / maxG) * 100)}%`, background: '#9adbc4', borderRadius: 3 }} />
                       <div style={{ flex: 1, minHeight: 2, height: `${Math.max(2, (Math.max(d.net, 0) / maxG) * 100)}%`, background: 'var(--c-primary)', borderRadius: 3 }} />
                     </div>
@@ -199,7 +199,7 @@ export function Dashboard() {
               </div>
               <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--c-ink-2)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 3, background: '#9adbc4', display: 'inline-block' }} /> খচরা লাভ
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: '#9adbc4', display: 'inline-block' }} /> মূল লব্ধি
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--c-primary)', display: 'inline-block' }} /> নিট লাভ
@@ -281,7 +281,7 @@ export function Dashboard() {
         </div>
 
         <div className="card card-pad">
-          <div className="card-title" style={{ fontSize: 'var(--fs-md)' }}>সর্বাধিক দেয়াদায়ী (সাপ্লায়ার)</div>
+          <div className="card-title" style={{ fontSize: 'var(--fs-md)' }}>সর্বাধিক প্রদেয় (সাপ্লায়ার)</div>
           {data.topSupplierPayables.length === 0 ? (
             <Empty title="কোনো বকেয়া নেই" compact />
           ) : (

@@ -70,7 +70,7 @@ export function createPurchase(db: DB, input: CreatePurchaseInput): {
     if (!product) throw new NotFoundError('পণ্য', li.productId);
     const gross = roundToPaise(fromPaise(li.unitCostPaise) * qty);
     const discount = li.discountPaise ?? 0;
-    if (discount < 0 || discount > gross) throw new ValidationError('ডিসকাউন্ট সঠিক নয়।');
+    if (discount < 0 || discount > gross) throw new ValidationError('ছাড় সঠিক নয়।');
     let tax: Paise = 0;
     if (fin.tax_enabled && fin.tax_rate_bps > 0) {
       tax = fin.tax_inclusive_prices
@@ -142,8 +142,6 @@ export function createPurchase(db: DB, input: CreatePurchaseInput): {
         l.qty, l.li.unitCostPaise, l.discount, l.tax, l.net
       );
       // Stock in at this invoice's net unit cost (discount/tax apportioned)
-      const unitNet = Math.round((l.net / l.qty) * 100) / 100; // paise per unit (rounded)
-      const lineNetPaise = roundToPaise(fromPaise(Math.round(l.net / l.qty)) * l.qty);
       receive(db, {
         businessId: input.businessId,
         productId: l.product.id,
@@ -155,7 +153,6 @@ export function createPurchase(db: DB, input: CreatePurchaseInput): {
         userId: input.userId,
         at: now
       });
-      void unitNet; void lineNetPaise;
 
       // Keep product master purchase price in sync (latest cost)
       db.prepare('UPDATE products SET purchase_price_paise = ?, updated_at = ? WHERE id = ?')
@@ -308,7 +305,7 @@ export interface PurchasePaymentRecord {
   created_at: number;
 }
 
-export function getPurchase(db: DB, idOrRef: string): (PurchaseRecord & {
+export function getPurchase(db: DB, businessId: string, idOrRef: string): (PurchaseRecord & {
   items: PurchaseItemRecord[];
   payments: PurchasePaymentRecord[];
 }) | undefined {
@@ -318,9 +315,9 @@ export function getPurchase(db: DB, idOrRef: string): (PurchaseRecord & {
        FROM purchases p
        LEFT JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN users u ON u.id = p.user_id
-       WHERE p.id = ? OR p.reference_no = ?`
+       WHERE p.business_id = ? AND (p.id = ? OR p.reference_no = ?)`
     )
-    .get(idOrRef, idOrRef) as PurchaseRecord | undefined;
+    .get(businessId, idOrRef, idOrRef) as PurchaseRecord | undefined;
   if (!row) return undefined;
   return {
     ...row,

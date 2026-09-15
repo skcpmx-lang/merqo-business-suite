@@ -15,7 +15,7 @@ import { recordAudit } from './auditService';
 import { getSetting } from '../repos/settings';
 import { ValidationError, UnauthorizedError, NotFoundError, ConflictError } from '../errors';
 import { hashPassword, verifyPassword } from './setupService';
-import { ROLE_CATALOG, DEFAULT_ROLE_PERMISSIONS, type RoleKey } from '../../shared/permissions';
+import { ROLE_CATALOG, DEFAULT_ROLE_PERMISSIONS, PERMISSIONS, type RoleKey } from '../../shared/permissions';
 
 export interface AuthUser {
   id: string;
@@ -369,19 +369,31 @@ export function listRoles(db: DB, businessId: string) {
     .all(businessId) as Record<string, unknown>[];
 }
 
-export function getRolePermissions(db: DB, roleId: string): string[] {
+export function getRolePermissions(db: DB, businessId: string, roleId: string): string[] {
+  const role = db
+    .prepare('SELECT id FROM roles WHERE id = ? AND business_id = ?')
+    .get(roleId, businessId) as { id: string } | undefined;
+  if (!role) throw new NotFoundError('ভূমিকা');
   return (db
     .prepare('SELECT permission_key FROM role_permissions WHERE role_id = ?')
     .all(roleId) as { permission_key: string }[])
     .map((r) => r.permission_key);
 }
 
-export function setRolePermissions(db: DB, roleId: string, permissions: string[], userId?: string): void {
-  const role = db.prepare('SELECT * FROM roles WHERE id = ?').get(roleId) as
+export function setRolePermissions(db: DB, businessId: string, roleId: string, permissions: string[], userId?: string): void {
+  const role = db
+    .prepare('SELECT * FROM roles WHERE id = ? AND business_id = ?')
+    .get(roleId, businessId) as
     | { id: string; business_id: string; key: string; is_system: number }
     | undefined;
   if (!role) throw new NotFoundError('ভূমিকা');
   if (role.key === 'owner') throw new ConflictError('মালিক ভূমিকার অনুমতি পরিবর্তন করা যায় না।');
+  // Only keys from the shared catalog are accepted — arbitrary strings would
+  // become dead permissions in the DB.
+  const valid = new Set<string>(PERMISSIONS.map((p) => p.key));
+  for (const p of permissions) {
+    if (!valid.has(p)) throw new ValidationError(`অজানা অনুমতি: ${p}`);
+  }
   tx(db, () => {
     db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(roleId);
     const ins = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_key) VALUES (?, ?)');

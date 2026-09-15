@@ -213,6 +213,7 @@ export function insertProduct(db: DB, input: ProductInput): string {
 
 export function updateProduct(
   db: DB,
+  businessId: string,
   id: string,
   patch: Partial<Omit<ProductInput, 'businessId' | 'barcodes' | 'openingStock' | 'openingCostPaise'>>,
   userId?: string | null
@@ -238,8 +239,8 @@ export function updateProduct(
   if ('expiryEnabled' in patch) sets.push('expiry_enabled = ?'), params.push(patch.expiryEnabled ? 1 : 0);
   if (sets.length === 0) return;
   sets.push('updated_at = ?', `updated_by = ?`);
-  params.push(Date.now(), userId ?? null, id);
-  db.prepare(`UPDATE products SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  params.push(Date.now(), userId ?? null, id, businessId);
+  db.prepare(`UPDATE products SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).run(...params);
 }
 
 export function setProductBarcodes(db: DB, businessId: string, productId: string, barcodes: string[]): void {
@@ -281,19 +282,19 @@ export function insertCategory(db: DB, businessId: string, name: string, sort = 
   return id;
 }
 
-export function updateCategory(db: DB, id: string, patch: { name?: string; parentId?: string | null; isActive?: boolean }): void {
+export function updateCategory(db: DB, businessId: string, id: string, patch: { name?: string; parentId?: string | null; isActive?: boolean }): void {
   const sets: string[] = [];
   const params: unknown[] = [];
   if (patch.name !== undefined) sets.push('name = ?'), params.push(patch.name);
   if (patch.parentId !== undefined) sets.push('parent_id = ?'), params.push(patch.parentId);
   if (patch.isActive !== undefined) sets.push('is_active = ?'), params.push(patch.isActive ? 1 : 0);
   if (!sets.length) return;
-  db.prepare(`UPDATE product_categories SET ${sets.join(', ')} WHERE id = ?`).run(...params, id);
+  db.prepare(`UPDATE product_categories SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).run(...params, id, businessId);
 }
 
-export function deleteCategory(db: DB, id: string): void {
-  db.prepare('UPDATE product_categories SET is_active = 0, parent_id = NULL WHERE id = ?').run(id);
-  db.prepare('UPDATE products SET category_id = NULL WHERE category_id = ?').run(id);
+export function deleteCategory(db: DB, businessId: string, id: string): void {
+  db.prepare('UPDATE product_categories SET is_active = 0, parent_id = NULL WHERE id = ? AND business_id = ?').run(id, businessId);
+  db.prepare('UPDATE products SET category_id = NULL WHERE category_id = ? AND business_id = ?').run(id, businessId);
 }
 
 // ---------- Brands ----------
@@ -339,10 +340,10 @@ export interface BatchRecord {
   created_at: number;
 }
 
-export function listActiveBatches(db: DB, productId: string): BatchRecord[] {
+export function listActiveBatches(db: DB, businessId: string, productId: string): BatchRecord[] {
   return db
-    .prepare('SELECT * FROM product_batches WHERE product_id = ? AND status = \'active\' ORDER BY created_at ASC')
-    .all(productId) as BatchRecord[];
+    .prepare('SELECT * FROM product_batches WHERE business_id = ? AND product_id = ? AND status = \'active\' ORDER BY created_at ASC')
+    .all(businessId, productId) as BatchRecord[];
 }
 
 export function insertBatch(
@@ -382,12 +383,12 @@ export function logPriceChange(
   ).run(generateId(), businessId, productId, field, oldValue, newValue, reason, userId ?? null, Date.now());
 }
 
-export function listPriceHistory(db: DB, productId: string, limit = 50) {
+export function listPriceHistory(db: DB, businessId: string, productId: string, limit = 50) {
   return db
     .prepare(
       `SELECT h.*, u.name AS user_name FROM product_price_history h
        LEFT JOIN users u ON u.id = h.changed_by
-       WHERE h.product_id = ? ORDER BY h.changed_at DESC LIMIT ?`
+       WHERE h.business_id = ? AND h.product_id = ? ORDER BY h.changed_at DESC LIMIT ?`
     )
-    .all(productId, limit) as Record<string, unknown>[];
+    .all(businessId, productId, limit) as Record<string, unknown>[];
 }

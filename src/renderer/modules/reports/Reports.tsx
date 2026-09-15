@@ -18,7 +18,7 @@ const TABS: { key: ReportTab; label: string }[] = [
   { key: 'stock', label: 'ইনভেন্টরি' },
   { key: 'accounts', label: 'হিসাব' },
   { key: 'expenses', label: 'খরচ' },
-  { key: 'collections', label: 'আদায়/দেয়াদায়ী' }
+  { key: 'collections', label: 'আদায়/প্রদেয়' }
 ];
 
 export function Reports() {
@@ -127,7 +127,7 @@ function SalesReport({ token, range }: { token: string; range: { from: number; t
         <MiniStat label="ছাড়" value={<Money paise={(summary?.discounts as number) ?? 0} />} />
         <MiniStat label="ফেরত" value={<Money paise={(summary?.returns as number) ?? 0} />} />
         <MiniStat label="প্রাপ্ত" value={<Money paise={(summary?.received as number) ?? 0} />} />
-        {showProfit && <MiniStat label="খচরা লাভ" value={<Money paise={((((summary?.net_sales as number) ?? 0) - ((summary?.returns as number) ?? 0) - ((summary?.cogs as number) ?? 0)))} />} sub="নিট বিক্রয় − COGS" />}
+        {showProfit && <MiniStat label="মূল লব্ধি" value={<Money paise={((((summary?.net_sales as number) ?? 0) - ((summary?.returns as number) ?? 0) - ((summary?.cogs as number) ?? 0)))} />} sub="নিট বিক্রয় − COGS" />}
       </div>
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div>
@@ -154,7 +154,7 @@ function SalesReport({ token, range }: { token: string; range: { from: number; t
       <div style={{ height: 16 }} />
       <div className="card-title" style={{ fontSize: 'var(--fs-md)', marginBottom: 10 }}>পণ্য অনুযায়ী</div>
       <ReportTable
-        head={showProfit ? ['পণ্য', 'পরিমাণ', 'বিক্রয়', 'খচরা লাভ'] : ['পণ্য', 'পরিমাণ', 'বিক্রয়']}
+        head={showProfit ? ['পণ্য', 'পরিমাণ', 'বিক্রয়', 'মূল লব্ধি'] : ['পণ্য', 'পরিমাণ', 'বিক্রয়']}
         rows={(byProduct ?? []).slice(0, 20)}
         renderRow={(r) => [String(r.name ?? ''), <Bn>{String(r.qty ?? '')}</Bn>, <Money paise={(r.revenue as number) ?? 0} />, ...(showProfit ? [<Money paise={(r.profit as number) ?? 0} />] : [])]}
       />
@@ -174,7 +174,7 @@ function PnlReport({ token, range }: { token: string; range: { from: number; to:
   const rows: [string, number, string?][] = [
     ['নিট বিক্রয়', (data.netSales as number) ?? 0],
     ['(−) COGS (বিক্রয়ের খরচ)', -(((data.cogs as number) ?? 0)), 'deduct'],
-    ['= খচরা লাভ', (data.grossProfit as number) ?? 0, 'subtotal'],
+    ['= মূল লব্ধি', (data.grossProfit as number) ?? 0, 'subtotal'],
     ['(−) মোট খরচ', -(((data.expenses as number) ?? 0)), 'deduct'],
     ['= নিট লাভ', (data.netProfit as number) ?? 0, 'total']
   ];
@@ -302,8 +302,8 @@ function CollectionsReport({ token, range }: { token: string; range: { from: num
           <ReportTable head={['কাস্টমার', 'ফোন', 'বকেয়া']} rows={dues ?? []} renderRow={(r) => [String(r.name ?? ''), String(r.phone ?? ''), <Money paise={(r.due_balance_paise as number) ?? 0} />]} />
         </div>
         <div style={{ gridColumn: '1 / -1' }}>
-          <div className="card-title" style={{ fontSize: 'var(--fs-md)', marginBottom: 10 }}>সর্বাধিক দেয়াদায়ী (সাপ্লায়ার)</div>
-          <ReportTable head={['সাপ্লায়ার', 'ফোন', 'দেয়াদায়ী']} rows={payables ?? []} renderRow={(r) => [String(r.name ?? ''), String(r.phone ?? ''), <Money paise={(r.payable_balance_paise as number) ?? 0} />]} />
+          <div className="card-title" style={{ fontSize: 'var(--fs-md)', marginBottom: 10 }}>সর্বাধিক প্রদেয় (সাপ্লায়ার)</div>
+          <ReportTable head={['সাপ্লায়ার', 'ফোন', 'প্রদেয়']} rows={payables ?? []} renderRow={(r) => [String(r.name ?? ''), String(r.phone ?? ''), <Money paise={(r.payable_balance_paise as number) ?? 0} />]} />
         </div>
       </div>
     </div>

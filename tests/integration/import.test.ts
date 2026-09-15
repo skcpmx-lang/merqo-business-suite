@@ -59,7 +59,7 @@ describe('CSV import engine (§49)', () => {
     expect(row.current_stock).toBe(100);
 
     const job = listImportJobs(env.db, env.businessId)[0];
-    const errs = getImportErrors(env.db, job.id as string);
+    const errs = getImportErrors(env.db, env.businessId, job.id as string);
     expect(errs.length).toBeGreaterThanOrEqual(2);
   });
 

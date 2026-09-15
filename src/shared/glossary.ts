@@ -69,8 +69,8 @@ export const T = {
   agent: 'এজেন্ট',
   commission: 'কমিশন',
   transfer: 'ট্রান্সফার',
-  discount: 'ডিসকাউন্ট',
-  tax: 'ট্যাক্স',
+  discount: 'ছাড়',
+  tax: 'কর',
   vat: 'ভ্যাট',
   credit: 'উজড়',
   advance: 'অগ্রিম',
@@ -83,7 +83,7 @@ export const T = {
   total: 'মোট',
   subtotal: 'আংশিক মোট',
   grandTotal: 'সর্বমোট',
-  paid: 'প্রদান',
+  paid: 'প্রদত্ত',
   change: 'ফেরত অর্থ',
   remaining: 'বাকি',
   margin: 'মার্জিন',
@@ -92,7 +92,7 @@ export const T = {
   purchasePrice: 'ক্রয় মূল্য',
   wholesalePrice: 'হোলসেল মূল্য',
   minPrice: 'ন্যূনতম মূল্য',
-  openingStock: 'প্রারম্ভিক স্টক',
+  openingStock: 'প্রাথমিক স্টক',
   reorderLevel: 'পুনরায় অর্ডার সীমা',
 
   // Common actions

@@ -12,7 +12,7 @@ type SectionKey = 'business' | 'financial' | 'pos' | 'invoice' | 'notifications'
 
 const SECTIONS: { key: SectionKey; label: string; icon: React.ReactNode }[] = [
   { key: 'business', label: 'ব্যবসার তথ্য', icon: <Store size={15} /> },
-  { key: 'financial', label: 'ফাইন্যান্সিয়াল', icon: <Coins size={15} /> },
+  { key: 'financial', label: 'আর্থিক', icon: <Coins size={15} /> },
   { key: 'pos', label: 'বিক্রয় (POS)', icon: <Receipt size={15} /> },
   { key: 'invoice', label: 'বিল/রসিদ', icon: <Receipt size={15} /> },
   { key: 'notifications', label: 'নোটিফিকেশন', icon: <Bell size={15} /> },
@@ -199,7 +199,7 @@ function FinancialSection({ token, canManage }: { token: string; canManage: bool
       for (const [k, val] of entries) {
         await api.settings.set(token, 'financial', k, val);
       }
-      toast('success', 'ফাইন্যান্সিয়াল সেটিংস সংরক্ষিত');
+      toast('success', 'আর্থিক সেটিংস সংরক্ষিত');
       setS(await api.settings.section(token, 'financial'));
     } catch (e) {
       toast('error', 'সংরক্ষণ হয়নি', errMsg(e));
@@ -225,12 +225,12 @@ function FinancialSection({ token, canManage }: { token: string; canManage: bool
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <SectionHead title="ফাইন্যান্সিয়াল" sub="ট্যাক্স, ন্যাটিভ স্টক ও হিসাবের নিয়ম — পুরো অ্যাপে প্রযোজ্য।" />
+      <SectionHead title="আর্থিক" sub="কর, নেগেটিভ স্টক ও হিসাবের নিয়ম — পুরো অ্যাপে প্রযোজ্য।" />
       {!canManage && <ReadOnlyBanner />}
       <div className="field" style={{ marginBottom: 12 }}>
-        <label>ট্যাক্স</label>
+        <label>কর</label>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="ট্যাক্স হার (%)">
+          <Field label="করের হার (%)">
             <TextInput
               inputMode="decimal"
               disabled={!canManage}
@@ -242,10 +242,10 @@ function FinancialSection({ token, canManage }: { token: string; canManage: bool
               }}
             />
           </Field>
-          <Field label="দামে ট্যাক্স আছে?">
+          <Field label="দামে কর আছে?">
             <SelectInput value={v('tax_inclusive_prices', false) ? 'yes' : 'no'} disabled={!canManage} onChange={(e) => setS({ ...s, tax_inclusive_prices: e.target.value === 'yes' })}>
               <option value="no">না — বিলে আলাদা দেখাবে</option>
-              <option value="yes">হ্যাঁ — দামেই ট্যাক্স আছে</option>
+              <option value="yes">হ্যাঁ — দামেই কর আছে</option>
             </SelectInput>
           </Field>
         </div>
@@ -308,14 +308,14 @@ function PosSection({ token, canManage }: { token: string; canManage: boolean })
         <Field label="ডিফল্ট কাগজ">
           <SelectInput value={String(s.default_paper ?? '80mm')} disabled={!canManage} onChange={(e) => setS({ ...s, default_paper: e.target.value })}>
             <option value="80mm">80mm (থার্মাল)</option>
-            <option value="58mm">58mm (থার্মাল)</option>
+            <option value="57mm">57mm (থার্মাল)</option>
             <option value="A4">A4 (লেজার/ইনকজেট)</option>
           </SelectInput>
         </Field>
         <Field label="ডিফল্ট কাস্টমার মোড">
-          <SelectInput value={String(s.default_customer_mode ?? 'walkin')} disabled={!canManage} onChange={(e) => setS({ ...s, default_customer_mode: e.target.value })}>
-            <option value="walkin">ওয়াক-ইন (অতিথি)</option>
-            <option value="select">প্রতিবার কাস্টমার বাছাই</option>
+          <SelectInput value={String(s.default_customer_mode ?? 'walk_in')} disabled={!canManage} onChange={(e) => setS({ ...s, default_customer_mode: e.target.value })}>
+            <option value="walk_in">প্রতি বিক্রয়ে সাধারণ কাস্টমার</option>
+            <option value="last_used">আগের কাস্টমার রাখুন</option>
           </SelectInput>
         </Field>
         <div style={{ gridColumn: '1 / -1' }} className="checkbox-row">
@@ -460,9 +460,9 @@ function NotificationsSection({ token, canManage }: { token: string; canManage: 
     <div style={{ maxWidth: 640 }}>
       <SectionHead title="নোটিফিকেশন" sub="অ্যালার্ট চালু/বন্ধ — ড্যাশবোর্ড ও লগইনের সময় দেখা যাবে।" />
       {!canManage && <ReadOnlyBanner />}
-      {boolRow('low_stock_enabled', 'কম স্টক অ্যালার্ট', 'রিঅর্ডার লেভেলের নিচে নামলে জানানো হবে')}
+      {boolRow('low_stock_enabled', 'কম স্টক অ্যালার্ট', 'পুনরায় অর্ডার সীমার নিচে নামলে জানানো হবে')}
       {boolRow('customer_due_enabled', 'কাস্টমার বকেয়া রিমাইন্ডার', 'প্রাপ্য টাকা পড়ে গেলে জানানো হবে')}
-      {boolRow('supplier_payable_enabled', 'সাপ্লায়ার দেয়াদায়ী রিমাইন্ডার', 'প্রদেয় টাকা পড়ে গেলে জানানো হবে')}
+      {boolRow('supplier_payable_enabled', 'সাপ্লায়ার প্রদেয় রিমাইন্ডার', 'প্রদেয় টাকা পড়ে গেলে জানানো হবে')}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
         <Field label="মেয়াদ শেষ হওয়ার সতর্কতা (দিন)">
           <TextInput inputMode="numeric" value={String(s.expiring_days ?? 30)} disabled={!canManage} onChange={(e) => setS({ ...s, expiring_days: Number(e.target.value) || 30 })} />
@@ -485,11 +485,20 @@ function NotificationsSection({ token, canManage }: { token: string; canManage: 
 function BackupSection({ token, canManage }: { token: string; canManage: boolean }) {
   const toast = useToast();
   const [dir, setDir] = useState<string | null>(null);
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [autoDays, setAutoDays] = useState(7);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
-      setDir(await api.backup.directory(token));
+      const [d, en, days] = await Promise.all([
+        api.backup.directory(token),
+        api.settings.get(token, 'backup', 'auto_enabled', false),
+        api.settings.get(token, 'backup', 'auto_interval_days', 7)
+      ]);
+      setDir(d);
+      setAutoEnabled(!!en);
+      setAutoDays(Number(days) || 7);
     })();
   }, [token]);
 
@@ -510,6 +519,28 @@ function BackupSection({ token, canManage }: { token: string; canManage: boolean
     }
   }
 
+  async function toggleAuto(on: boolean) {
+    if (!canManage) return;
+    setAutoEnabled(on);
+    try {
+      await api.settings.set(token, 'backup', 'auto_enabled', on);
+    } catch (e) {
+      toast('error', 'সংরক্ষণ হয়নি', errMsg(e));
+    }
+  }
+
+  async function saveDays() {
+    if (!canManage) return;
+    const d = Math.min(Math.max(1, Number(autoDays) || 7), 90);
+    setAutoDays(d);
+    try {
+      await api.settings.set(token, 'backup', 'auto_interval_days', d);
+      toast('success', 'স্বয়ংক্রিয় ব্যাকআপ সেটিংস সংরক্ষিত');
+    } catch (e) {
+      toast('error', 'সংরক্ষণ হয়নি', errMsg(e));
+    }
+  }
+
   return (
     <div style={{ maxWidth: 640 }}>
       <SectionHead title="ব্যাকআপ" sub="ব্যাকআপ ফাইল কোথায় রাখবে অ্যাপ।" />
@@ -524,8 +555,31 @@ function BackupSection({ token, canManage }: { token: string; canManage: boolean
           </Button>
         </div>
       </Field>
+      <div className="checkbox-row" style={{ padding: '12px 0', borderBottom: '1px solid var(--c-border)', marginTop: 12 }}>
+        <input type="checkbox" checked={autoEnabled} disabled={!canManage} onChange={(e) => void toggleAuto(e.target.checked)} />
+        <div>
+          <div style={{ fontWeight: 600 }}>স্বয়ংক্রিয় ব্যাকআপ</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-ink-3)' }}>
+            অ্যাপ চালু হলে সময়মতো নিজে থেকেই ব্যাকআপ নেবে
+          </div>
+        </div>
+      </div>
+      {autoEnabled && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+          <Field label="কত দিন পর পর (দিন)">
+            <TextInput inputMode="numeric" value={String(autoDays)} disabled={!canManage} onChange={(e) => setAutoDays(Number(e.target.value) || 7)} />
+          </Field>
+          {canManage && (
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <Button variant="outline" onClick={() => void saveDays()}>সংরক্ষণ করুন</Button>
+            </div>
+          )}
+        </div>
+      )}
       <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-ink-3)', marginTop: 10 }}>
-        নিয়মিত (প্রতি সপ্তাহে) ম্যানুয়ালি ব্যাকআপ নেওয়ার অভ্যাস করুন — “ডেটা: ব্যাকআপ” পেজ থেকে।
+        {autoEnabled
+          ? 'স্বয়ংক্রিয় ব্যাকআপ চালু আছে — তবু মাঝে মাঝে “ডেটা: ব্যাকআপ” পেজ থেকে নিজেও নেবেন।'
+          : 'নিয়মিত (প্রতি সপ্তাহে) ম্যানুয়ালি ব্যাকআপ নেওয়ার অভ্যাস করুন — “ডেটা: ব্যাকআপ” পেজ থেকে।'}
       </p>
     </div>
   );

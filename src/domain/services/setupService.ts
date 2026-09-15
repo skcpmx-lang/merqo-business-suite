@@ -161,7 +161,7 @@ export function createBusiness(db: DB, input: CreateBusinessInput): { businessId
       if (opening !== 0) {
         db.prepare(
           `INSERT INTO account_transactions (id, business_id, account_id, transaction_type, amount_paise, balance_after_paise, note, user_id, created_at)
-           VALUES (?, ?, ?, 'opening', ?, ?, 'প্রারম্ভিক ব্যালেন্স', ?, ?)`
+           VALUES (?, ?, ?, 'opening', ?, ?, 'প্রাথমিক ব্যালেন্স', ?, ?)`
         ).run(generateId(), businessId, accId, opening, opening, adminUserId, at);
       }
     }

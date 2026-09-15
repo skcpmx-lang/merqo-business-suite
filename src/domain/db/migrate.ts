@@ -7,6 +7,7 @@ import type { DB } from './connection';
 import { m0001_init } from './migrations/0001_init';
 import { m0002_seed_system, seedPermissions } from './migrations/0002_seed_system';
 import { m0003_session_tokens } from './migrations/0003_session_tokens';
+import { m0004_return_cogs } from './migrations/0004_return_cogs';
 
 export interface Migration {
   version: number;
@@ -17,7 +18,8 @@ export interface Migration {
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: 'init_schema', sql: m0001_init },
   { version: 2, name: 'seed_system_catalog', sql: m0002_seed_system },
-  { version: 3, name: 'session_tokens_idempotency', sql: m0003_session_tokens }
+  { version: 3, name: 'session_tokens_idempotency', sql: m0003_session_tokens },
+  { version: 4, name: 'return_cogs_credit_override', sql: m0004_return_cogs }
 ];
 
 export function runMigrations(db: DB): number {
@@ -38,7 +40,9 @@ export function runMigrations(db: DB): number {
     if (applied.has(m.version)) continue;
     const apply = db.transaction(() => {
       db.exec(m.sql);
-      if (m.name === 'seed_system_catalog') {
+      // The permission catalog is shared-code-driven; re-seed it whenever a
+      // migration can add new permission keys (idempotent INSERT OR IGNORE).
+      if (m.name === 'seed_system_catalog' || m.name === 'return_cogs_credit_override') {
         seedPermissions(db);
       }
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(

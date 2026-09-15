@@ -98,7 +98,7 @@ function GlobalSearch() {
   if (!can('sales.view')) return null;
 
   const groups: { label: string; key: keyof NonNullable<Row>; itemLabel: (r: Row) => string; itemSub: (r: Row) => string }[] = [
-    { label: 'পণ্য', key: 'products', itemLabel: (r) => String(r.name ?? ''), itemSub: (r) => `স্টক: ${r.quantity ?? 0}` },
+    { label: 'পণ্য', key: 'products', itemLabel: (r) => String(r.name ?? ''), itemSub: (r) => `স্টক: ${r.stock ?? 0}` },
     { label: 'কাস্টমার', key: 'customers', itemLabel: (r) => String(r.name ?? ''), itemSub: (r) => String(r.phone ?? '') },
     { label: 'সাপ্লায়ার', key: 'suppliers', itemLabel: (r) => String(r.name ?? ''), itemSub: (r) => String(r.phone ?? '') },
     { label: 'বিক্রয়', key: 'sales', itemLabel: (r) => String(r.reference_no ?? ''), itemSub: (r) => `৳${(((r.total_paise as number) ?? 0) / 100).toLocaleString('en-IN')}` },
@@ -217,7 +217,7 @@ function Notifications() {
             items.map((n) => (
               <div key={String(n.id)} className={`notif-item${n.is_read ? '' : ' unread'}`}>
                 <div className="t">{String(n.title ?? '')}</div>
-                <div className="m">{String(n.message ?? '')}</div>
+                <div className="m">{String(n.body ?? '')}</div>
                 <div className="d">
                   {fmtDateTime((n.created_at as number) ?? null)}
                   {!n.is_read && (

@@ -18,17 +18,22 @@ import { getSetting, setSetting } from '../domain/repos/settings';
 import { version } from '../../package.json';
 import { schemaVersion } from '../domain/db/migrate';
 import { registerIpc, toIpcError } from './ipc/handlers';
+import { resolveSession, requirePermission } from '../domain/services/userService';
 import { receiptHtml, invoiceHtml } from './print/receipts';
-import { hasPendingRestore, performRestore, clearPendingRestore } from './restore';
-import { IPC } from '../shared/ipc';
-import { ValidationError, NotFoundError } from '../domain/errors';
+import { hasPendingRestore, performRestore, clearPendingRestore, restoreMarkerPath } from './restore';
+import { commitRestore } from '../domain/services/backupService';
+import { IPC, MAIN_EVENTS } from '../shared/ipc';
+import { ValidationError, UnauthorizedError } from '../domain/errors';
 
 let db: DB;
 let mainWindow: BrowserWindow | null = null;
 
-/** dialog parent (non-optional per Electron typings) */
-function parent(): Electron.BaseWindow {
-  return mainWindow as unknown as Electron.BaseWindow;
+function showSaveDialog(options: Electron.SaveDialogOptions): Promise<Electron.SaveDialogReturnValue> {
+  return mainWindow ? dialog.showSaveDialog(mainWindow, options) : dialog.showSaveDialog(options);
+}
+
+function showOpenDialog(options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
+  return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
 }
 
 function dataDir(): string {
@@ -64,12 +69,17 @@ function onReady(): void {
   fs.mkdirSync(logDir, { recursive: true });
   const errLog = path.join(logDir, 'main-error.log');
   process.on('uncaughtException', (e) => {
+    // Full detail goes to the log only; the user sees a generic, safe
+    // message (raw stack traces are never shown to normal users).
     try {
-      fs.appendFileSync(errLog, `[${new Date().toISOString()}] ${e?.stack ?? e}\n`);
+      fs.appendFileSync(errLog, `[${new Date().toISOString()}] uncaught: ${e?.stack ?? e}\n`);
     } catch {
       // ignore
     }
-    dialog.showErrorBox('MERQO', `অপ্রত্যাশিত ত্রুটি ঘটেছে:\n${e?.message ?? e}`);
+    dialog.showErrorBox(
+      'MERQO',
+      'অপ্রত্যাশিত ত্রুটি ঘটেছে। আপনার ডেটা নিরাপদ。\n\nসমস্যাটি সমাধান করতে অ্যাপটি বন্ধ করে আবার চালু করুন।'
+    );
   });
   process.on('unhandledRejection', (e) => {
     try {
@@ -79,6 +89,10 @@ function onReady(): void {
     }
   });
 
+  // A restore temp file left behind by a crashed restore is useless —
+  // clean it up before the database is opened.
+  cleanupOrphanRestoreTemps();
+
   db = openDatabase(dbFile());
 
   // startup integrity self-check
@@ -87,11 +101,43 @@ function onReady(): void {
     console.error('[merqo] integrity issues:', integrity.issues);
   }
 
-  registerIpc(db);
+  // If the previous run swapped in a backup, record the completion audit
+  // on the (now restored) database.
+  maybeCommitRestoreAudit();
+
+  // onRestore: after prepareRestore the app restarts; the before-quit hook
+  // performs the file swap and relaunches, so here we only need to quit.
+  registerIpc(db, { onRestore: () => app.quit() });
   registerAppIpc();
   buildMenu();
   maybeAutoBackup();
   createWindow();
+}
+
+/** Remove `merqo.db.restore-*` temp files from a crashed restore. */
+function cleanupOrphanRestoreTemps(): void {
+  try {
+    for (const f of fs.readdirSync(dataDir())) {
+      if (f.startsWith('merqo.db.restore-')) {
+        fs.rmSync(path.join(dataDir(), f), { force: true });
+      }
+    }
+  } catch {
+    // data dir may not exist yet
+  }
+}
+
+/** Record the restore-completion audit once, then clear the marker. */
+function maybeCommitRestoreAudit(): void {
+  const marker = restoreMarkerPath(dbFile());
+  try {
+    if (!fs.existsSync(marker)) return;
+    const biz = getActiveBusiness(db);
+    if (biz) commitRestore(db, biz.id as string, undefined);
+    fs.rmSync(marker, { force: true });
+  } catch (e) {
+    console.error('[merqo] restore audit commit failed:', e);
+  }
 }
 
 /* ---------------- window ---------------- */
@@ -109,7 +155,9 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // Sandboxed renderer: no Node, no filesystem — the preload bridge is
+      // the only door to the main process.
+      sandbox: true,
       spellcheck: false
     }
   });
@@ -145,7 +193,7 @@ function buildMenu(): void {
         {
           label: 'ডেটা ব্যাকআপ…',
           accelerator: 'CmdOrCtrl+Alt+B',
-          click: () => mainWindow?.webContents.send('menu:backup')
+          click: () => mainWindow?.webContents.send(MAIN_EVENTS.MENU_BACKUP)
         },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit', label: 'বিদায়' }
@@ -159,13 +207,15 @@ function buildMenu(): void {
         {
           label: 'MERQO সম্পর্কে',
           click: () => {
-            dialog.showMessageBox(parent(), {
+            const opts: Electron.MessageBoxOptions = {
               type: 'info',
               title: 'MERQO',
               message: 'MERQO',
               detail: `সংস্করণ ${version}\nবাংলা বিক্রয় ব্যবস্থাপনা সফটওয়্যার\n\nসম্পূর্ণ অফলাইনে কাজ করে। আপনার সব ডেটা এই কম্পিউটারে থাকে।`,
               buttons: ['ঠিক আছে']
-            });
+            };
+            if (mainWindow) void dialog.showMessageBox(mainWindow, opts);
+            else void dialog.showMessageBox(opts);
           }
         }
       ]
@@ -205,9 +255,11 @@ function registerAppIpc(): void {
     if (typeof defaultName !== 'string' || typeof content !== 'string') {
       throw new ValidationError('সঠিক ফাইল তথ্য দিন।');
     }
-    const { canceled, filePath } = await dialog.showSaveDialog(parent(), {
+    // Never let a client-supplied name escape the downloads folder.
+    const safeName = path.basename(defaultName) || 'merqo-export.csv';
+    const { canceled, filePath } = await showSaveDialog({
       title: 'ফাইল সংরক্ষণ করুন',
-      defaultPath: path.join(app.getPath('downloads'), defaultName),
+      defaultPath: path.join(app.getPath('downloads'), safeName),
       filters: [
         { name: 'CSV ফাইল', extensions: ['csv'] },
         { name: 'PDF ফাইল', extensions: ['pdf'] },
@@ -225,7 +277,7 @@ function registerAppIpc(): void {
   });
 
   ipcMain.handle(IPC.APP_PICK_DIRECTORY, async (_e, title?: string) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(parent(), {
+    const { canceled, filePaths } = await showOpenDialog({
       title: typeof title === 'string' ? title : 'ফোল্ডার বাছাই করুন',
       properties: ['openDirectory', 'createDirectory']
     });
@@ -234,30 +286,44 @@ function registerAppIpc(): void {
   });
 
   /* ---- print ---- */
-  ipcMain.handle(IPC.PRINT_RECEIPT_HTML, (_e, token: string, saleId: string, paper: '57mm' | '80mm' | 'A4') => {
+  // Print renders documents from domain data in the main process. The
+  // renderer-supplied token is resolved to a session, the user must hold
+  // invoices.view, and the sale is looked up within that user's business —
+  // a token can never pull a document from another business.
+  const printAuth = (token: string): string => {
+    const user = resolveSession(db, token);
+    if (!user) throw new UnauthorizedError('সেশনটি শেষ হয়ে গেছে। আবার লগইন করুন।');
+    requirePermission(user, 'invoices.view');
+    return user.businessId;
+  };
+
+  ipcMain.handle(IPC.PRINT_RECEIPT_HTML, (_e, token: string, saleId: string, paper?: '57mm' | '80mm' | 'A4') => {
     try {
-      return { ok: true, data: receiptHtml(db, saleId, paper ?? '80mm') };
+      const businessId = printAuth(token);
+      return { ok: true, data: receiptHtml(db, businessId, saleId, paper ?? '80mm') };
     } catch (e) {
-      if (e instanceof NotFoundError) return { ok: false, error: toIpcError(e) };
       return { ok: false, error: toIpcError(e) };
     }
   });
-  ipcMain.handle(IPC.PRINT_INVOICE_HTML, (_e, _token: string, saleId: string) => {
+  ipcMain.handle(IPC.PRINT_INVOICE_HTML, (_e, token: string, saleId: string) => {
     try {
-      return { ok: true, data: invoiceHtml(db, saleId) };
+      const businessId = printAuth(token);
+      return { ok: true, data: invoiceHtml(db, businessId, saleId) };
     } catch (e) {
       return { ok: false, error: toIpcError(e) };
     }
   });
-  ipcMain.handle(IPC.PRINT_PDF, async (_e, req: { html: string; defaultFileName: string; paper?: '57mm' | '80mm' | 'A4' }) => {
+  ipcMain.handle(IPC.PRINT_PDF, async (_e, token: string, req: { html: string; defaultFileName: string; paper?: '57mm' | '80mm' | 'A4' }) => {
     try {
+      printAuth(token);
       if (!req || typeof req.html !== 'string' || typeof req.defaultFileName !== 'string') {
         throw new ValidationError('সঠিক প্রিন্ট তথ্য দিন।');
       }
       const pdf = await renderToPdf(req.html, req.paper ?? 'A4');
-      const { canceled, filePath } = await dialog.showSaveDialog(parent(), {
+      const safeName = path.basename(req.defaultFileName) || 'merqo.pdf';
+      const { canceled, filePath } = await showSaveDialog({
         title: 'PDF সংরক্ষণ করুন',
-        defaultPath: path.join(app.getPath('downloads'), req.defaultFileName),
+        defaultPath: path.join(app.getPath('downloads'), safeName),
         filters: [{ name: 'PDF ফাইল', extensions: ['pdf'] }]
       });
       if (canceled || !filePath) return { ok: true, data: null };
@@ -271,28 +337,66 @@ function registerAppIpc(): void {
       return { ok: false, error: toIpcError(e) };
     }
   });
+  ipcMain.handle(IPC.PRINT_TO_PRINTER, async (_e, token: string, req: { html: string; printerName?: string }) => {
+    try {
+      printAuth(token);
+      if (!req || typeof req.html !== 'string') {
+        throw new ValidationError('সঠিক প্রিন্ট তথ্য দিন।');
+      }
+      const printed = await printToPrinter(req.html, req.printerName);
+      return { ok: true, data: { printed } };
+    } catch (e) {
+      return { ok: false, error: toIpcError(e) };
+    }
+  });
+}
+
+function offscreenWindow(): BrowserWindow {
+  return new BrowserWindow({
+    show: false,
+    width: 400,
+    height: 800,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
 }
 
 /** Render an HTML string to PDF via an offscreen webContents. */
 async function renderToPdf(html: string, paper: '57mm' | '80mm' | 'A4'): Promise<Buffer> {
-  const holder = new BrowserWindow({
-    show: false,
-    width: 400,
-    height: 800,
-    webPreferences: { contextIsolation: true, nodeIntegration: false }
-  });
+  const holder = offscreenWindow();
   try {
     await holder.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    // printToPDF pageSize {width, height} is in INCHES.
+    // 57mm ≈ 2.24in, 80mm ≈ 3.15in. A tall page keeps a receipt on one page.
     const options: Electron.PrintToPDFOptions =
       paper === 'A4'
         ? { pageSize: 'A4', printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } }
         : {
             printBackground: true,
             margins: { top: 0, bottom: 0, left: 0, right: 0 },
-            // 80mm ≈ 302px @96dpi; 57mm ≈ 215px. Tall page keeps a receipt on one page.
-            pageSize: paper === '57mm' ? { width: 215, height: 1500 } : { width: 302, height: 1500 }
+            pageSize: paper === '57mm' ? { width: 2.24, height: 20 } : { width: 3.15, height: 20 }
           };
     return await holder.webContents.printToPDF(options);
+  } finally {
+    holder.destroy();
+  }
+}
+
+/** Send HTML to a physical printer via an offscreen webContents. */
+async function printToPrinter(html: string, printerName?: string): Promise<boolean> {
+  const holder = offscreenWindow();
+  try {
+    await holder.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    return await new Promise<boolean>((resolve) => {
+      holder.webContents.print(
+        { printBackground: true, ...(printerName ? { deviceName: printerName } : {}) },
+        (success, failureReason) => {
+          if (!success && failureReason) {
+            console.error('[merqo] print failed:', failureReason);
+          }
+          resolve(success);
+        }
+      );
+    });
   } finally {
     holder.destroy();
   }

@@ -180,9 +180,11 @@ export function executeImport(
     return (r[col] ?? '').trim();
   };
 
-  const unitById = new Map(
-    listUnits(db, input.businessId).map((u) => [(u.name as string).trim(), u.id as string])
-  );
+  const units = listUnits(db, input.businessId);
+  const unitById = new Map(units.map((u) => [(u.name as string).trim(), u.id as string]));
+  // Blank unit cell → the business's system (base) unit, else the first
+  // active unit. Never a fabricated "test" unit.
+  const defaultUnit = units.find((u) => (u.is_system as number) === 1) ?? units[0] ?? null;
   const categoryByName = new Map<string, string>(
     (db
       .prepare('SELECT name, id FROM product_categories WHERE business_id = ? AND is_active = 1')
@@ -204,8 +206,8 @@ export function executeImport(
       }
       try {
         if (input.entity === 'products') {
-          const unitKey = get(r, 'unit') || 'পিস (টেস্ট)';
-          const unitId = unitById.get(unitKey) ?? null;
+          const unitKey = get(r, 'unit') || (defaultUnit ? (defaultUnit.name as string) : '');
+          const unitId = unitKey ? (unitById.get(unitKey) ?? null) : (defaultUnit?.id as string | null);
           if (!unitId) {
             importErrors.push({ row: rowNum, field: 'একক', value: unitKey, message: 'একক পাওয়া যায়নি' });
             return;
@@ -298,10 +300,14 @@ export function listImportJobs(db: DB, businessId: string, limit = 20) {
     .all(businessId, limit) as Record<string, unknown>[];
 }
 
-export function getImportErrors(db: DB, jobId: string, limit = 500) {
+export function getImportErrors(db: DB, businessId: string, jobId: string, limit = 500) {
   return db
-    .prepare('SELECT * FROM import_errors WHERE import_job_id = ? ORDER BY row_no LIMIT ?')
-    .all(jobId, limit) as Record<string, unknown>[];
+    .prepare(
+      `SELECT e.* FROM import_errors e
+       JOIN import_jobs j ON j.id = e.import_job_id
+       WHERE j.business_id = ? AND e.import_job_id = ? ORDER BY e.row_no LIMIT ?`
+    )
+    .all(businessId, jobId, limit) as Record<string, unknown>[];
 }
 
 export { toPaise };

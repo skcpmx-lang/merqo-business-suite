@@ -123,7 +123,7 @@ export function UsersAdmin() {
 
 function RoleBadge({ roleKey, isOwner }: { roleKey: string; isOwner: boolean }) {
   const cat = ROLE_CATALOG.find((r) => r.key === roleKey);
-  if (isOwner || roleKey === 'owner' || roleKey === 'administrator') return <span className="badge badge-purple">মালিক</span>;
+  if (isOwner || roleKey === 'owner') return <span className="badge badge-purple">মালিক</span>;
   return (
     <span className={`badge ${roleKey === 'manager' ? 'badge-blue' : roleKey === 'cashier' ? 'badge-gray' : 'badge-green'}`}>
       {cat?.label ?? roleKey}
@@ -472,7 +472,7 @@ function AuditLog({ token }: { token: string }) {
         cols={cols}
         rows={rows}
         emptyTitle="কোনো অডিট এন্ট্রি নেই"
-        emptySub="ক্রিটিক্যাল অ্যাকশন (বিল ভয়েড, স্টক অ্যাডজাস্ট, ব্যাকআপ রিস্টোর…) এখানে লেখা হবে"
+        emptySub="ক্রিটিক্যাল অ্যাকশন (বিল ভয়েড, স্টক অ্যাডজাস্ট, ব্যাকআপ পুনরুদ্ধার…) এখানে লেখা হবে"
         emptyIcon={<ScrollText size={20} />}
       />
     </div>

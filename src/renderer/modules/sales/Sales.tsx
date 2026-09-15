@@ -7,7 +7,6 @@ import { useAsync } from '../../lib/useAsync';
 import { api, errMsg, idemKey } from '../../lib/api';
 import type { Row } from '@shared/ipc';
 import { Button, DataTable, type Col, Modal, Field, TextInput, Money, useToast, fmtDate, Bn, ConfirmDialog } from '../../ui';
- '@shared/money';
 import { paymentMethodLabel } from '@shared/payments';
 
 export function Sales() {
@@ -29,9 +28,9 @@ export function Sales() {
   const rows = useMemo(() => (data?.rows ?? []) as Row[], [data]);
 
   const cols: Col<Row>[] = [
-    { key: 'reference_no', label: 'রফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
+    { key: 'reference_no', label: 'রেফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
     { key: 'date', label: 'তারিখ', render: (r) => fmtDate((r.date as number) ?? null) },
-    { key: 'customer_name', label: 'কাস্টমার', render: (r) => String(r.customer_name ?? 'সামান কাস্তমার') },
+    { key: 'customer_name', label: 'কাস্টমার', render: (r) => String(r.customer_name ?? 'সাধারণ কাস্টমার') },
     { key: 'user_name', label: 'ক্যাশিয়ার', render: (r) => String(r.user_name ?? '—') },
     { key: 'total_paise', label: 'মোট', align: 'right', render: (r) => <strong><Money paise={(r.total_paise as number) ?? 0} /></strong> },
     {
@@ -61,7 +60,7 @@ export function Sales() {
         <div className="toolbar">
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--c-ink-3)' }} />
-            <TextInput style={{ paddingLeft: 30 }} placeholder="রফারেন্স / কাস্টমার…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
+            <TextInput style={{ paddingLeft: 30 }} placeholder="রেফারেন্স / কাস্টমার…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
           </div>
         </div>
       </div>
@@ -208,7 +207,7 @@ function SaleDetailModal({
             onClick={async () => {
               try {
                 const html = await api.print.receiptHtml(token, String(sale.reference_no), '80mm');
-                const path = await api.print.savePdf({ html, defaultFileName: `${String(sale.reference_no)}.pdf` });
+                const path = await api.print.savePdf(token, { html, defaultFileName: `${String(sale.reference_no)}.pdf`, paper: '80mm' });
                 if (path) toast('success', 'PDF সংরক্ষিত', path);
               } catch (e) {
                 toast('error', 'PDF তৈরি হয়নি', errMsg(e));
@@ -217,13 +216,28 @@ function SaleDetailModal({
           >
             রসিদ PDF
           </Button>
+          <Button
+            variant="outline"
+            icon={<FileText size={15} />}
+            onClick={async () => {
+              try {
+                const html = await api.print.invoiceHtml(token, String(sale.reference_no));
+                const path = await api.print.savePdf(token, { html, defaultFileName: `ইনভয়েস-${String(sale.reference_no)}.pdf`, paper: 'A4' });
+                if (path) toast('success', 'PDF সংরক্ষিত', path);
+              } catch (e) {
+                toast('error', 'PDF তৈরি হয়নি', errMsg(e));
+              }
+            }}
+          >
+            ইনভয়েস PDF
+          </Button>
           <Button variant="primary" onClick={onClose}>বন্ধ করুন</Button>
         </>
       }
     >
       <div className="detail-grid">
         <div className="detail-cell"><div className="k">তারিখ</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}>{fmtDate((sale.date as number) ?? null)}</div></div>
-        <div className="detail-cell"><div className="k">কাস্টমার</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}>{String(sale.customer_name ?? 'সামান কাস্তমার')}</div></div>
+        <div className="detail-cell"><div className="k">কাস্টমার</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}>{String(sale.customer_name ?? 'সাধারণ কাস্টমার')}</div></div>
         <div className="detail-cell"><div className="k">মোট</div><div className="v"><Money paise={(sale.total_paise as number) ?? 0} /></div></div>
         <div className="detail-cell"><div className="k">বকেয়া</div><div className="v" style={{ color: (sale.due_paise as number) ? 'var(--c-danger)' : 'var(--c-success)' }}><Money paise={(sale.due_paise as number) ?? 0} /></div></div>
       </div>

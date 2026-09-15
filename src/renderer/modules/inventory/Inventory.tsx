@@ -52,7 +52,7 @@ export function Inventory() {
         return <Bn>{q}</Bn>;
       }
     },
-    { key: 'reorder_level', label: 'অর্ডার স্তর', align: 'right', render: (r) => <Bn>{String(r.reorder_level ?? 0)}</Bn> },
+    { key: 'reorder_level', label: 'অর্ডার সীমা', align: 'right', render: (r) => <Bn>{String(r.reorder_level ?? 0)}</Bn> },
     ...(can('stock.viewCost') ? [{
       key: 'value', label: 'স্টক মূল্য', align: 'right' as const, render: (r: Row) => {
         const q = (r.current_stock as number) ?? 0;
@@ -99,13 +99,13 @@ export function Inventory() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <StatCard label="মোট পণ্য" icon={<Boxes size={15} />} value={<Bn>{String(summary?.total_products ?? 0)}</Bn>} />
-        <StatCard label="কম স্টক" tone="amber" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.low_stock_count ?? 0)}</Bn>} sub="অর্ডার স্তরে বা তার নিচে" />
-        <StatCard label="শেষ স্টক" tone="red" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.out_of_stock_count ?? 0)}</Bn>} />
+        <StatCard label="মোট পণ্য" icon={<Boxes size={15} />} value={<Bn>{String(summary?.totalProducts ?? 0)}</Bn>} />
+        <StatCard label="কম স্টক" tone="amber" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.lowStock ?? 0)}</Bn>} sub="অর্ডার সীমায় বা তার নিচে" />
+        <StatCard label="শেষ স্টক" tone="red" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.outOfStock ?? 0)}</Bn>} />
         {can('stock.viewCost') ? (
-          <StatCard label="স্টকের মূল্য" value={`৳${(((summary?.stock_value_paise as number) ?? 0) / 100).toLocaleString('en-IN')}`} sub="খরচদামে" />
+          <StatCard label="স্টকের মূল্য" value={`৳${(((summary?.stockValuePaise as number) ?? 0) / 100).toLocaleString('en-IN')}`} sub="খরচদামে" />
         ) : (
-          <StatCard label="পণ্যের ক্যাটাগরি" value={<Bn>{String(summary?.category_count ?? 0)}</Bn>} />
+          <StatCard label="মোট একক" value={<Bn>{String(summary?.totalUnits ?? 0)}</Bn>} />
         )}
       </div>
 
@@ -172,7 +172,7 @@ export function Inventory() {
               <div>
                 {reconcileResult.mismatches.map((m, i) => (
                   <div key={i} style={{ fontSize: 'var(--fs-sm)', padding: '4px 0' }}>
-                    {String(m.name)} — লেজারে <strong>{String(m.actual)}</strong>, হিসাবে <strong>{String(m.expected)}</strong>
+                    {String(m.name)} — স্টকে <strong>{String(m.actual)}</strong>, হিসাবে <strong>{String(m.expected)}</strong>
                   </div>
                 ))}
               </div>
@@ -197,17 +197,18 @@ function MovementsTable({ token }: { token: string }) {
             const map: Record<string, { label: string; cls: string }> = {
               purchase: { label: 'ক্রয়', cls: 'badge-blue' },
               sale: { label: 'বিক্রয়', cls: 'badge-green' },
-              sale_return: { label: 'সেল রিটার্ন', cls: 'badge-amber' },
-              purchase_return: { label: 'করয রিটার্ন', cls: 'badge-amber' },
+              sale_void: { label: 'বিক্রয় বাতিল', cls: 'badge-red' },
+              sales_return: { label: 'বিক্রয় ফেরত', cls: 'badge-amber' },
+              purchase_return: { label: 'ক্রয় ফেরত', cls: 'badge-amber' },
               adjustment: { label: 'সমন্বয়', cls: 'badge-gray' },
-              opening: { label: 'প্রারম্ভিক', cls: 'badge-gray' }
+              opening_stock: { label: 'প্রাথমিক স্টক', cls: 'badge-gray' }
             };
             const m = map[t] ?? { label: t, cls: 'badge-gray' };
             return <span className={`badge ${m.cls}`}>{m.label}</span>;
           }
         },
         { key: 'quantity', label: 'পরিমাণ', align: 'right', render: (r) => <Bn>{String(r.quantity ?? '')}</Bn> },
-        { key: 'reference_no', label: 'রফারেন্স', render: (r) => String(r.reference_no ?? '—') },
+        { key: 'reference_no', label: 'রেফারেন্স', render: (r) => String(r.reference_no ?? '—') },
         { key: 'note', label: 'নোট', render: (r) => String(r.note ?? '—') }
       ]}
       rows={(data ?? []) as Row[]}
@@ -238,7 +239,6 @@ function AdjustModal({ token, product, onClose, onDone }: { token: string; produ
           productId: String(product.id),
           adjustmentType: 'correction',
           quantity: Math.abs(diff),
-          referenceNo: 'ADJ-UI',
           reason: reason.trim() || 'গোডোয়ান পরীক্ষায় সংখ্যা নির্ভুল করা হয়েছে'
         }, idemKey());
       } else {
@@ -250,7 +250,6 @@ function AdjustModal({ token, product, onClose, onDone }: { token: string; produ
           productId: String(product.id),
           adjustmentType: type,
           quantity: q,
-          referenceNo: 'ADJ-UI',
           reason: reason.trim()
         }, idemKey());
       }

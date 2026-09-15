@@ -10,6 +10,7 @@
  *  - Cheques post to their account only when marked cleared (configurable).
  */
 import type { DB } from '../db/connection';
+import { tx } from '../db/connection';
 import { generateId } from '../../shared/ids';
 import { getSetting, getFinancialSettings } from '../repos/settings';
 import { allocateReference } from '../repos/sequences';
@@ -154,26 +155,31 @@ export function transfer(db: DB, input: TransferInput): { id: string; referenceN
   const from = getAccount(db, input.businessId, input.fromAccountId);
   const to = getAccount(db, input.businessId, input.toAccountId);
 
-  const n = allocateReference(db, REF_PREFIX.accountTransfer);
-  const referenceNo = `${REF_PREFIX.accountTransfer}-${String(n).padStart(6, '0')}`;
   const id = generateId();
   const at = input.at ?? Date.now();
 
-  db.prepare(
-    `INSERT INTO account_transfers
-     (id, business_id, reference_no, from_account_id, to_account_id, amount_paise, note, user_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, input.businessId, referenceNo, from.id, to.id, input.amountPaise, input.note ?? '', input.userId ?? null, at);
+  // Atomic: the transfer record + both postings commit or roll back together.
+  let referenceNo = '';
+  tx(db, () => {
+    const n = allocateReference(db, REF_PREFIX.accountTransfer);
+    referenceNo = `${REF_PREFIX.accountTransfer}-${String(n).padStart(6, '0')}`;
 
-  post(db, {
-    businessId: input.businessId, accountId: from.id, type: 'transfer_out',
-    amountPaise: -input.amountPaise, referenceType: 'account_transfer', referenceId: id,
-    referenceNo, note: `→ ${to.name}${input.note ? ' — ' + input.note : ''}`, userId: input.userId, at
-  });
-  post(db, {
-    businessId: input.businessId, accountId: to.id, type: 'transfer_in',
-    amountPaise: input.amountPaise, referenceType: 'account_transfer', referenceId: id,
-    referenceNo, note: `← ${from.name}${input.note ? ' — ' + input.note : ''}`, userId: input.userId, at
+    db.prepare(
+      `INSERT INTO account_transfers
+       (id, business_id, reference_no, from_account_id, to_account_id, amount_paise, note, user_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.businessId, referenceNo, from.id, to.id, input.amountPaise, input.note ?? '', input.userId ?? null, at);
+
+    post(db, {
+      businessId: input.businessId, accountId: from.id, type: 'transfer_out',
+      amountPaise: -input.amountPaise, referenceType: 'account_transfer', referenceId: id,
+      referenceNo, note: `→ ${to.name}${input.note ? ' — ' + input.note : ''}`, userId: input.userId, at
+    });
+    post(db, {
+      businessId: input.businessId, accountId: to.id, type: 'transfer_in',
+      amountPaise: input.amountPaise, referenceType: 'account_transfer', referenceId: id,
+      referenceNo, note: `← ${from.name}${input.note ? ' — ' + input.note : ''}`, userId: input.userId, at
+    });
   });
   return { id, referenceNo };
 }

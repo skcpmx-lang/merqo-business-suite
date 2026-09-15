@@ -35,7 +35,7 @@ export function Expenses() {
   const rows = useMemo(() => (data?.rows ?? []) as Row[], [data]);
 
   const cols: Col<Row>[] = [
-    { key: 'reference_no', label: 'রফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
+    { key: 'reference_no', label: 'রেফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
     { key: 'date', label: 'তারিখ', render: (r) => fmtDate((r.date as number) ?? null) },
     { key: 'category_name', label: 'ক্যাটাগরি', render: (r) => String(r.category_name ?? '—') },
     { key: 'note', label: 'বিবরণ', render: (r) => String(r.note ?? '—') },
@@ -184,7 +184,7 @@ function ExpenseFormModal({
         method,
         note: note.trim() || undefined
       }, idemKey());
-      toast('success', 'খরচ লেখা হয়েছে', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'খরচ লেখা হয়েছে', `রেফারেন্স: ${res.referenceNo}`);
       onSaved();
     } catch (e) {
       toast('error', 'খরচ লেখা যায়নি', errMsg(e));
@@ -200,7 +200,7 @@ function ExpenseFormModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>বাতিল</Button>
-          <Button variant="primary" loading={busy} disabled={!categoryId || amount <= 0} onClick={save}>লেখুন</Button>
+          <Button variant="primary" loading={busy} disabled={!categoryId || amount <= 0} onClick={save}>যোগ করুন</Button>
         </>
       }
     >

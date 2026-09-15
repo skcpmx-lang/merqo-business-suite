@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { ipcMain } from 'electron';
 import type { DB } from '../../domain/db/connection';
 import { IPC, type IpcError, type Range } from '../../shared/ipc';
-import { ValidationError, UnauthorizedError, NotFoundError, ConflictError } from '../../domain/errors';
+import { ValidationError, UnauthorizedError, NotFoundError, ConflictError, MerqoError } from '../../domain/errors';
 import {
   login, logout, resolveSession, listUsers, createUser, updateUser, changePassword,
   listRoles, getRolePermissions, setRolePermissions, requirePermission,
@@ -73,7 +73,7 @@ function sha256(input: string): string {
 
 function userOf(db: DB, token: string): SessionUser {
   const user = resolveSession(db, token);
-  if (!user) throw new UnauthorizedError('সেশন স্ক্রুটি হয়ে গেছে। আবার লগইন করুন।');
+  if (!user) throw new UnauthorizedError('সেশনটি শেষ হয়ে গেছে। আবার লগইন করুন।');
   return user;
 }
 
@@ -82,6 +82,14 @@ function asRange(r: Range): Range {
     throw new ValidationError('সঠিক সময়সীমা দিন।');
   }
   return r;
+}
+
+/** Local 'YYYY-MM-DD' bucket → local-midnight epoch ms (for chart labels). */
+function localDateToEpoch(dateStr: string): number {
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3 || !parts.every((n) => Number.isFinite(n))) return 0;
+  const [y, m, d] = parts;
+  return new Date(y, m - 1, d).getTime();
 }
 
 /**
@@ -120,14 +128,19 @@ function runIdempotent<T>(db: DB, user: SessionUser, key: string | undefined, pa
   return result;
 }
 
+/**
+ * Serialize an error across the IPC boundary.
+ *  - Domain errors (MerqoError) carry a stable code + a Bangla message that
+ *    is already safe for end users → passed through untouched.
+ *  - Anything else is a bug: it is logged with full detail but the renderer
+ *    only ever sees a generic, safe message — no stack traces, no raw SQL.
+ */
 export function toIpcError(e: unknown): IpcError {
-  if (e instanceof ValidationError) return { code: 'VALIDATION', message: e.message };
-  if (e instanceof UnauthorizedError) return { code: 'UNAUTHORIZED', message: e.message };
-  if (e instanceof NotFoundError) return { code: 'NOT_FOUND', message: e.message };
-  if (e instanceof ConflictError) return { code: 'CONFLICT', message: e.message };
-  const msg = e instanceof Error ? e.message : String(e);
+  if (e instanceof MerqoError) {
+    return { code: e.code === 'UNKNOWN' ? 'INTERNAL' : e.code, message: e.message };
+  }
   console.error('[merqo] unhandled IPC error:', e);
-  return { code: 'INTERNAL', message: `অপ্রত্যাশিত ত্রুটি: ${msg}` };
+  return { code: 'INTERNAL', message: 'অপ্রত্যাশিত ত্রুটি ঘটেছে। আবার চেষ্টা করুন।' };
 }
 
 type Raw = (user: SessionUser, args: unknown[]) => unknown;
@@ -150,7 +163,7 @@ function buildCsv(db: DB, businessId: string, entity: string): string {
   const rows: string[] = [];
   const push = (...cells: unknown[]) => rows.push(cells.map(csvEscape).join(','));
   if (entity === 'products') {
-    push('নাম', 'SKU', 'বারকোড', 'ক্যাটাগরি', 'ব্র্যান্ড', 'একক', 'খরচদাম', 'ভেদাম', 'স্টক');
+    push('নাম', 'SKU', 'বারকোড', 'ক্যাটাগরি', 'ব্র্যান্ড', 'একক', 'খরচদাম', 'বিক্রয় মূল্য', 'স্টক');
     const prods = queryProducts(db, { businessId, limit: 100000, offset: 0 }).rows as unknown as Record<string, unknown>[];
     for (const p of prods) {
       const bar = (db.prepare('SELECT barcode FROM product_barcodes WHERE product_id = ? LIMIT 1').get(p.id as string) as { barcode: string } | undefined)?.barcode ?? '';
@@ -163,20 +176,20 @@ function buildCsv(db: DB, businessId: string, entity: string): string {
       push(c.name, c.phone ?? '', c.address ?? '', (c.due_balance_paise as number) / 100);
     }
   } else if (entity === 'suppliers') {
-    push('নাম', 'ফোন', 'ঠিকানা', 'দেয়াদায়ী');
+    push('নাম', 'ফোন', 'ঠিকানা', 'প্রদেয়');
     for (const s of listSuppliers(db, { businessId, limit: 100000 }).rows as Record<string, unknown>[]) {
       push(s.name, s.phone ?? '', s.address ?? '', (s.payable_balance_paise as number) / 100);
     }
   } else if (entity === 'sales') {
-    push('রফারেন্স', 'তারিখ', 'কাস্টমার', 'পণ্য', 'মোট', 'পেমেন্ট', 'বকেয়া', 'স্ট্যাটাস');
+    push('রেফারেন্স', 'তারিখ', 'কাস্টমার', 'পণ্য', 'মোট', 'পেমেন্ট', 'বকেয়া', 'স্ট্যাটাস');
     const { rows: sales } = querySales(db, { businessId, limit: 100000, offset: 0 } as never);
     for (const s of sales as Record<string, unknown>[]) {
       push(s.reference_no, new Date(s.date as number).toISOString().slice(0, 10),
-        s.customer_name ?? 'হেঁচারি', (s.items as Record<string, unknown>[])?.map((i) => `${i.product_name}×${i.quantity}`).join(' + ') ?? '',
+        s.customer_name ?? 'সাধারণ কাস্টমার', (s.items as Record<string, unknown>[])?.map((i) => `${i.product_name}×${i.quantity}`).join(' + ') ?? '',
         (s.total_paise as number) / 100, (s.paid_paise as number) / 100, (s.due_paise as number) / 100, s.status);
     }
   } else if (entity === 'purchases') {
-    push('রফারেন্স', 'তারিখ', 'সাপ্লায়ার', 'মোট', 'পেমেন্ট', 'বকেয়া', 'স্ট্যাটাস');
+    push('রেফারেন্স', 'তারিখ', 'সাপ্লায়ার', 'মোট', 'পেমেন্ট', 'বকেয়া', 'স্ট্যাটাস');
     const { rows: purchases } = queryPurchases(db, { businessId, limit: 100000, offset: 0 } as never);
     for (const p of purchases as Record<string, unknown>[]) {
       push(p.reference_no, new Date(p.date as number).toISOString().slice(0, 10),
@@ -281,7 +294,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.NOTIFICATIONS_READ, auth: true, permission: 'notifications.view',
-    run: (_u, args) => markRead(args[0] as DB, args[1] as string)
+    run: (user, args) => markRead(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.NOTIFICATIONS_READ_ALL, auth: true, permission: 'notifications.view',
@@ -289,7 +302,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.NOTIFICATIONS_DELETE, auth: true, permission: 'notifications.view',
-    run: (_u, args) => deleteNotification(args[0] as DB, args[1] as string)
+    run: (user, args) => deleteNotification(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.NOTIFICATIONS_SCAN, auth: true, permission: 'notifications.view',
@@ -341,7 +354,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.PRODUCTS_PRICE_HISTORY, auth: true, permission: 'products.view',
-    run: (_u, args) => listPriceHistory(args[0] as DB, args[1] as string)
+    run: (user, args) => listPriceHistory(args[0] as DB, user.businessId, args[1] as string)
   },
 
   /* ---- master data ---- */
@@ -355,11 +368,11 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.MASTER_CATEGORIES_UPDATE, auth: true, permission: 'products.edit',
-    run: (_u, args) => updateCategory(args[0] as DB, args[1] as string, args[2] as never)
+    run: (user, args) => updateCategory(args[0] as DB, user.businessId, args[1] as string, args[2] as never)
   },
   {
     channel: IPC.MASTER_CATEGORIES_DELETE, auth: true, permission: 'products.edit',
-    run: (_u, args) => deleteCategory(args[0] as DB, args[1] as string)
+    run: (user, args) => deleteCategory(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.MASTER_BRANDS_LIST, auth: true, permission: 'products.view',
@@ -403,7 +416,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.STOCK_BATCHES, auth: true, permission: 'stock.view',
-    run: (_u, args) => listActiveBatches(args[0] as DB, args[1] as string)
+    run: (user, args) => listActiveBatches(args[0] as DB, user.businessId, args[1] as string)
   },
 
   /* ---- sales ---- */
@@ -413,15 +426,23 @@ export const HANDLERS: HandlerDef[] = [
       runIdempotent(args[0] as DB, user, (args[1] as { idempotencyKey?: string }).idempotencyKey, args[1], () => {
         const req = args[1] as {
           lines: { productId: string; quantity: number; unitPricePaise?: number; discountPaise?: number; batchId?: string | null }[];
-          payments: { method: string; amountPaise: number }[];
-          customerId?: string | null; discountPaise?: number; note?: string; at?: number;
+          payments: { method: string; amountPaise: number; reference?: string; chequeNo?: string; bankName?: string; chequeDate?: number }[];
+          customerId?: string | null; orderDiscountPaise?: number; note?: string; at?: number;
+          overrideCreditLimit?: boolean;
         };
+        // Permission-derived flags — the domain layer never trusts the
+        // client for these, only the resolved session role.
+        const can = (perm: string) => user.isOwner || user.permissions.includes(perm);
         const res = createSale(args[0] as DB, {
           businessId: user.businessId, userId: user.id,
           lines: req.lines, payments: req.payments,
           customerId: req.customerId ?? null,
-          discountPaise: req.discountPaise ?? 0,
-          note: req.note ?? '', at: req.at
+          orderDiscountPaise: req.orderDiscountPaise ?? 0,
+          note: req.note ?? '', at: req.at,
+          allowDiscount: can('sales.discount'),
+          allowBelowMinPrice: can('sales.priceOverride'),
+          allowNegativeStock: can('stock.adjust'),
+          overrideCreditLimit: !!req.overrideCreditLimit && can('sales.creditOverride')
         } as never);
         return {
           id: res.saleId, referenceNo: res.referenceNo,
@@ -433,7 +454,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.SALES_GET, auth: true, permission: 'sales.view',
-    run: (_u, args) => getSale(args[0] as DB, args[1] as string) ?? null
+    run: (user, args) => getSale(args[0] as DB, user.businessId, args[1] as string) ?? null
   },
   {
     channel: IPC.SALES_QUERY, auth: true, permission: 'sales.view',
@@ -463,11 +484,11 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.SALES_HELD_RESUME, auth: true, permission: 'sales.view',
-    run: (_u, args) => resumeHeldSale(args[0] as DB, args[1] as string)
+    run: (user, args) => resumeHeldSale(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.SALES_HELD_CANCEL, auth: true, permission: 'sales.hold',
-    run: (_u, args) => cancelHeldSale(args[0] as DB, args[1] as string)
+    run: (user, args) => cancelHeldSale(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.SALES_RETURN_CREATE, auth: true, permission: 'sales.return',
@@ -484,8 +505,12 @@ export const HANDLERS: HandlerDef[] = [
       runIdempotent(args[0] as DB, user, (args[1] as { idempotencyKey?: string }).idempotencyKey, args[1], () => {
         const req = args[1] as {
           supplierId: string; supplierInvoiceNo?: string;
-          lines: { productId: string; quantity: number; unitCostPaise: number; batchId?: string | null }[];
-          payments: { method: string; amountPaise: number }[]; at?: number;
+          lines: {
+            productId: string; quantity: number; unitCostPaise: number;
+            discountPaise?: number; batchNo?: string; expiryDate?: number | null; batchId?: string | null;
+          }[];
+          payments: { method: string; amountPaise: number; reference?: string; chequeNo?: string; bankName?: string; chequeDate?: number }[];
+          at?: number;
         };
         const res = createPurchase(args[0] as DB, {
           businessId: user.businessId, userId: user.id,
@@ -497,7 +522,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.PURCHASES_GET, auth: true, permission: 'purchases.view',
-    run: (_u, args) => getPurchase(args[0] as DB, args[1] as string) ?? null
+    run: (user, args) => getPurchase(args[0] as DB, user.businessId, args[1] as string) ?? null
   },
   {
     channel: IPC.PURCHASES_QUERY, auth: true, permission: 'purchases.view',
@@ -526,7 +551,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.SUPPLIERS_GET, auth: true, permission: 'suppliers.view',
-    run: (_u, args) => getSupplier(args[0] as DB, args[1] as string) ?? null
+    run: (user, args) => getSupplier(args[0] as DB, user.businessId, args[1] as string) ?? null
   },
   {
     channel: IPC.SUPPLIERS_CREATE, auth: true, permission: 'suppliers.manage',
@@ -538,7 +563,7 @@ export const HANDLERS: HandlerDef[] = [
     run: (user, args) => {
       const input = args[1] as { id: string; name?: string; phone?: string; address?: string; email?: string; isActive?: boolean };
       const { id, ...patch } = input;
-      updateSupplier(args[0] as DB, id, patch, user.id);
+      updateSupplier(args[0] as DB, user.businessId, id, patch, user.id);
     }
   },
   {
@@ -550,7 +575,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.SUPPLIERS_LEDGER, auth: true, permission: 'suppliers.view',
-    run: (_u, args) => supplierLedger(args[0] as DB, args[1] as string)
+    run: (user, args) => supplierLedger(args[0] as DB, user.businessId, args[1] as string)
   },
 
   /* ---- customers ---- */
@@ -568,7 +593,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.CUSTOMERS_GET, auth: true, permission: 'customers.view',
-    run: (_u, args) => getCustomer(args[0] as DB, args[1] as string) ?? null
+    run: (user, args) => getCustomer(args[0] as DB, user.businessId, args[1] as string) ?? null
   },
   {
     channel: IPC.CUSTOMERS_CREATE, auth: true, permission: 'customers.manage',
@@ -580,7 +605,7 @@ export const HANDLERS: HandlerDef[] = [
     run: (user, args) => {
       const input = args[1] as { id: string; name?: string; phone?: string; address?: string; email?: string; creditLimitPaise?: number; isActive?: boolean };
       const { id, ...patch } = input;
-      updateCustomer(args[0] as DB, id, patch, user.id);
+      updateCustomer(args[0] as DB, user.businessId, id, patch, user.id);
     }
   },
   {
@@ -592,7 +617,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.CUSTOMERS_LEDGER, auth: true, permission: 'customers.view',
-    run: (_u, args) => customerLedger(args[0] as DB, args[1] as string)
+    run: (user, args) => customerLedger(args[0] as DB, user.businessId, args[1] as string)
   },
 
   /* ---- expenses ---- */
@@ -605,7 +630,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.EXPENSES_GET, auth: true, permission: 'expenses.create',
-    run: (_u, args) => getExpense(args[0] as DB, args[1] as string) ?? null
+    run: (user, args) => getExpense(args[0] as DB, user.businessId, args[1] as string) ?? null
   },
   {
     channel: IPC.EXPENSES_LIST, auth: true, permission: 'expenses.create',
@@ -758,7 +783,10 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.REPORT_SALES_BY_DAY, auth: true, permission: 'reports.view',
-    run: (user, args) => createReports(args[0] as DB).salesByDay(user.businessId, asRange(args[1] as Range), (args[2] as 'day' | 'week' | 'month') ?? 'day')
+    run: (user, args) =>
+      createReports(args[0] as DB)
+        .salesByDay(user.businessId, asRange(args[1] as Range), (args[2] as 'day' | 'week' | 'month') ?? 'day')
+        .map((r) => ({ ...r, label: localDateToEpoch((r.bucket as string) ?? '') }))
   },
   {
     channel: IPC.REPORT_SALES_BY_PAYMENT, auth: true, permission: 'reports.view',
@@ -850,7 +878,10 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.REPORT_COLLECTIONS_BY_DAY, auth: true, permission: 'customers.view',
-    run: (user, args) => createReports(args[0] as DB).collectionsByDay(user.businessId, asRange(args[1] as Range))
+    run: (user, args) =>
+      createReports(args[0] as DB)
+        .collectionsByDay(user.businessId, asRange(args[1] as Range))
+        .map((r) => ({ ...r, label: localDateToEpoch((r.day as string) ?? '') }))
   },
 
   /* ---- import / export ---- */
@@ -871,7 +902,7 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.IMPORT_ERRORS, auth: true, permission: 'imports.run',
-    run: (_u, args) => getImportErrors(args[0] as DB, args[1] as string)
+    run: (user, args) => getImportErrors(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.EXPORT_CSV, auth: true, permission: 'exports.run',
@@ -925,13 +956,13 @@ export const HANDLERS: HandlerDef[] = [
   },
   {
     channel: IPC.ROLES_PERMISSIONS, auth: true, permission: 'users.manage',
-    run: (_u, args) => getRolePermissions(args[0] as DB, args[1] as string)
+    run: (user, args) => getRolePermissions(args[0] as DB, user.businessId, args[1] as string)
   },
   {
     channel: IPC.ROLES_SET_PERMISSIONS, auth: true, permission: 'users.manage',
     run: (user, args) =>
       runIdempotent(args[0] as DB, user, (args[3] as string | undefined), [args[1], args[2]], () => {
-        setRolePermissions(args[0] as DB, args[1] as string, args[2] as string[], user.id);
+        setRolePermissions(args[0] as DB, user.businessId, args[1] as string, args[2] as string[], user.id);
         return null;
       })
   },
@@ -978,6 +1009,10 @@ export const HANDLERS: HandlerDef[] = [
       runIdempotent(args[0] as DB, user, `restore-${args[1] as string}`, [args[1]], () => {
         const tmp = prepareRestore(args[0] as DB, { businessId: user.businessId, userId: user.id, backupId: args[1] as string });
         setRestorePending(tmp);
+        // Restart now: the before-quit hook swaps the file and relaunches.
+        // Waiting for the user to close the app manually was the old UX.
+        const onRestore = ipcOptions?.onRestore;
+        if (onRestore) setTimeout(onRestore, 0);
         return { restartRequired: true };
       })
   },
@@ -996,8 +1031,16 @@ export const HANDLERS: HandlerDef[] = [
   }
 ];
 
+export interface IpcOptions {
+  /** Called after a restore is prepared; the main process relaunches the app. */
+  onRestore?: () => void;
+}
+
+let ipcOptions: IpcOptions | undefined;
+
 /** Register all handlers against the live database. */
-export function registerIpc(db: DB): void {
+export function registerIpc(db: DB, options?: IpcOptions): void {
+  ipcOptions = options;
   for (const def of HANDLERS) {
     ipcMain.handle(def.channel, async (_event, token: string, ...rest: unknown[]) => {
       try {

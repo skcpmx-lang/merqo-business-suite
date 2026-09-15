@@ -149,7 +149,7 @@ describe('a complete shop day, everything must reconcile', () => {
   });
 
   it('10a. processes a sales return (2 চিপস, restock + cash refund)', () => {
-    const firstSale = getSale(env.db, 'INV-000001')!;
+    const firstSale = getSale(env.db, env.businessId, 'INV-000001')!;
     const stockBefore = getStock(env.db, env.businessId, productA).quantity;
     const cashAcc = listAccounts(env.db, env.businessId).find((a) => a.name === 'নগদ')!;
     const cashBefore = (cashAcc as unknown as { balance_paise: number }).balance_paise;
@@ -167,7 +167,7 @@ describe('a complete shop day, everything must reconcile', () => {
   });
 
   it('10b. processes a purchase return (10 চকলেট back to supplier)', () => {
-    const purchase = getPurchase(env.db, 'PUR-000001')!;
+    const purchase = getPurchase(env.db, env.businessId, 'PUR-000001')!;
     const chocItem = purchase.items.find((i) => i.product_id === productB)!;
     const stockBefore = getStock(env.db, env.businessId, productB).quantity;
     const res = createPurchaseReturn(env.db, {

@@ -10,7 +10,7 @@ import { allocateReference } from '../repos/sequences';
 import { formatReference, REF_PREFIX } from '../../shared/refs';
 import { post, findAccountByMethod } from './accountService';
 import { postCustomerLedger } from './saleService';
-import { ValidationError, NotFoundError, ConflictError } from '../errors';
+import { ValidationError, NotFoundError } from '../errors';
 
 export interface CustomerInput {
   businessId: string;
@@ -31,7 +31,7 @@ export function createCustomer(db: DB, input: CustomerInput): string {
   const id = generateId();
   const at = input.at ?? Date.now();
   const opening = input.openingDuePaise ?? 0;
-  if (opening < 0) throw new ValidationError('প্রারম্ভিক বকেয়া ঋণাত্মক হতে পারে না।');
+  if (opening < 0) throw new ValidationError('প্রাথমিক বকেয়া ঋণাত্মক হতে পারে না।');
   tx(db, () => {
     db.prepare(
       `INSERT INTO customers (id, business_id, name, phone, email, address, customer_type,
@@ -47,7 +47,7 @@ export function createCustomer(db: DB, input: CustomerInput): string {
       db.prepare(
         `INSERT INTO customer_transactions
          (id, business_id, customer_id, transaction_type, amount_paise, note, user_id, created_at)
-         VALUES (?, ?, ?, 'opening', ?, 'প্রারম্ভিক বকেয়া', ?, ?)`
+         VALUES (?, ?, ?, 'opening', ?, 'প্রাথমিক বকেয়া', ?, ?)`
       ).run(generateId(), input.businessId, id, opening, input.userId ?? null, at);
     }
     recordAudit(db, { businessId: input.businessId, userId: input.userId, action: 'customer.create', entityType: 'customer', entityId: id, after: { name: input.name } });
@@ -57,11 +57,14 @@ export function createCustomer(db: DB, input: CustomerInput): string {
 
 export function updateCustomer(
   db: DB,
+  businessId: string,
   id: string,
   patch: Partial<Omit<CustomerInput, 'businessId' | 'openingDuePaise'>>,
   userId?: string
 ): void {
-  const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const existing = db
+    .prepare('SELECT * FROM customers WHERE id = ? AND business_id = ?')
+    .get(id, businessId) as Record<string, unknown> | undefined;
   if (!existing) throw new NotFoundError('কাস্টমার', id);
   const sets: string[] = ['updated_at = ?'];
   const params: unknown[] = [Date.now()];
@@ -76,10 +79,9 @@ export function updateCustomer(
     }
   }
   if ('isActive' in patch) sets.push('is_active = ?'), params.push(patch.isActive ? 1 : 0);
-  if (existing.due_balance_paise !== 0) {
-    throw new ConflictError('বকেয়া থাকা কাস্টমারের প্রোফাইল সম্পাদনায় সতর্ক থাকুন।');
-  }
-  db.prepare(`UPDATE customers SET ${sets.join(', ')} WHERE id = ?`).run(...params, id);
+  // Editing profile fields is always allowed, even with an outstanding due;
+  // the ledger is untouched here. (A hard block here was a usability defect.)
+  db.prepare(`UPDATE customers SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).run(...params, id, businessId);
   recordAudit(db, { businessId: (existing.business_id as string), userId, action: 'customer.update', entityType: 'customer', entityId: id });
 }
 
@@ -110,29 +112,29 @@ export function listCustomers(
   return { rows, total: total.c };
 }
 
-export function getCustomer(db: DB, id: string) {
+export function getCustomer(db: DB, businessId: string, id: string) {
   const row = db
     .prepare(
       `SELECT c.*,
               COALESCE((SELECT SUM(amount_paise) FROM customer_transactions ct WHERE ct.customer_id = c.id AND ct.transaction_type IN ('sale','opening')), 0) AS total_sales_paise,
               COALESCE((SELECT SUM(amount_paise) FROM customer_transactions ct WHERE ct.customer_id = c.id AND ct.transaction_type = 'payment'), 0) AS total_paid_paise,
               (SELECT created_at FROM customer_transactions ct WHERE ct.customer_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_txn_at
-       FROM customers c WHERE c.id = ?`
+       FROM customers c WHERE c.id = ? AND c.business_id = ?`
     )
-    .get(id) as Record<string, unknown> | undefined;
+    .get(id, businessId) as Record<string, unknown> | undefined;
   if (!row) return undefined;
   return row;
 }
 
-export function customerLedger(db: DB, customerId: string, from?: number, to?: number, limit = 300) {
+export function customerLedger(db: DB, businessId: string, customerId: string, from?: number, to?: number, limit = 300) {
   return db
     .prepare(
       `SELECT t.*, u.name AS user_name
        FROM customer_transactions t LEFT JOIN users u ON u.id = t.user_id
-       WHERE t.customer_id = ? ${from !== undefined ? 'AND t.created_at >= ?' : ''} ${to !== undefined ? 'AND t.created_at <= ?' : ''}
+       WHERE t.business_id = ? AND t.customer_id = ? ${from !== undefined ? 'AND t.created_at >= ?' : ''} ${to !== undefined ? 'AND t.created_at <= ?' : ''}
        ORDER BY t.created_at DESC, t.id DESC LIMIT ?`
     )
-    .all(customerId, ...(from !== undefined ? [from] : []), ...(to !== undefined ? [to] : []), limit) as Record<string, unknown>[];
+    .all(businessId, customerId, ...(from !== undefined ? [from] : []), ...(to !== undefined ? [to] : []), limit) as Record<string, unknown>[];
 }
 
 export interface CollectPaymentInput {

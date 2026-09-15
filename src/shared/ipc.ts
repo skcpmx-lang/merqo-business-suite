@@ -171,14 +171,39 @@ export const IPC = {
   // print
   PRINT_RECEIPT_HTML: 'print:receiptHtml',
   PRINT_INVOICE_HTML: 'print:invoiceHtml',
-  PRINT_PDF: 'print:pdf'
+  PRINT_PDF: 'print:pdf',
+  PRINT_TO_PRINTER: 'print:toPrinter'
+} as const;
+
+/** One-way main→renderer events (not request/response). */
+export const MAIN_EVENTS = {
+  /** Menu "ডেটা ব্যাকআপ…" clicked → open the data center backup tab. */
+  MENU_BACKUP: 'menu:backup'
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 
 /** Serialized error crossing the IPC boundary (no stack, Bangla message). */
 export interface IpcError {
-  code: 'VALIDATION' | 'UNAUTHORIZED' | 'NOT_FOUND' | 'CONFLICT' | 'BUSINESS' | 'INTERNAL';
+  // Mirrors the domain ErrorCodes so the renderer can branch on specific
+  // failures (e.g. CREDIT_LIMIT → show the override-confirm dialog).
+  code:
+    | 'VALIDATION'
+    | 'NOT_FOUND'
+    | 'CONFLICT'
+    | 'DUPLICATE'
+    | 'INSUFFICIENT_STOCK'
+    | 'INSUFFICIENT_FUNDS'
+    | 'CREDIT_LIMIT'
+    | 'PERMISSION_DENIED'
+    | 'UNAUTHORIZED'
+    | 'INVALID_STATE'
+    | 'DB_ERROR'
+    | 'IMPORT_ERROR'
+    | 'BACKUP_ERROR'
+    | 'PRINT_ERROR'
+    | 'UNKNOWN'
+    | 'INTERNAL';
   message: string;
 }
 
@@ -218,6 +243,15 @@ export interface AppInfo {
   dataDirectory: string;
 }
 
+export interface SalePaymentRequest {
+  method: string;
+  amountPaise: number;
+  reference?: string;
+  chequeNo?: string;
+  bankName?: string;
+  chequeDate?: number;
+}
+
 export interface CreateSaleRequest {
   lines: {
     productId: string;
@@ -226,11 +260,14 @@ export interface CreateSaleRequest {
     discountPaise?: number;
     batchId?: string | null;
   }[];
-  payments: { method: string; amountPaise: number }[];
+  payments: SalePaymentRequest[];
   customerId?: string | null;
-  discountPaise?: number;
+  /** order-level discount in paise (prorated across lines for tax) */
+  orderDiscountPaise?: number;
   note?: string;
   at?: number;
+  /** explicit override of a credit-limit breach (requires sales.creditOverride) */
+  overrideCreditLimit?: boolean;
   idempotencyKey?: string;
 }
 
@@ -248,8 +285,16 @@ export interface SaleCreatedResult {
 export interface CreatePurchaseRequest {
   supplierId: string;
   supplierInvoiceNo?: string;
-  lines: { productId: string; quantity: number; unitCostPaise: number; batchId?: string | null }[];
-  payments: { method: string; amountPaise: number }[];
+  lines: {
+    productId: string;
+    quantity: number;
+    unitCostPaise: number;
+    discountPaise?: number;
+    batchNo?: string;
+    expiryDate?: number | null;
+    batchId?: string | null;
+  }[];
+  payments: SalePaymentRequest[];
   at?: number;
   idempotencyKey?: string;
 }
@@ -506,6 +551,11 @@ export interface MerqoApi {
   print: {
     receiptHtml(token: string, saleId: string, paper?: '57mm' | '80mm' | 'A4'): Promise<string>;
     invoiceHtml(token: string, saleId: string): Promise<string>;
-    savePdf(req: { html: string; defaultFileName: string }): Promise<string | null>;
+    savePdf(token: string, req: { html: string; defaultFileName: string; paper?: '57mm' | '80mm' | 'A4' }): Promise<string | null>;
+    toPrinter(token: string, req: { html: string; printerName?: string }): Promise<{ printed: boolean }>;
+  };
+  system: {
+    /** Subscribe to the menu's "ডেটা ব্যাকআপ…" click. Returns unsubscribe fn. */
+    onMenuBackup(cb: () => void): () => void;
   };
 }

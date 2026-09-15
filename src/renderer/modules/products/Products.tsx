@@ -71,7 +71,7 @@ export function Products() {
     { key: 'category_name', label: 'ক্যাটাগরি', render: (r) => String(r.category_name ?? '—') },
     { key: 'primary_barcode', label: 'বারকোড', render: (r) => <span className="money">{String(r.primary_barcode ?? '—')}</span> },
     {
-      key: 'selling_price_paise', label: 'ভেদাম', align: 'right', render: (r) => (
+      key: 'selling_price_paise', label: 'বিক্রয় মূল্য', align: 'right', render: (r) => (
         <span style={{ fontWeight: 700 }}><Money paise={(r.selling_price_paise as number) ?? 0} /></span>
       )
     },
@@ -360,7 +360,7 @@ function ProductFormModal({
           <Field label="খরচদাম (৳)">
             <TextInput type="text" inputMode="decimal" className="input-money" value={f.cost || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ cost: Number.isFinite(v) ? v : 0 }); }} />
           </Field>
-          <Field label="ভেদাম (৳) *">
+          <Field label="বিক্রয় মূল্য (৳) *">
             <TextInput type="text" inputMode="decimal" className="input-money" value={f.price || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ price: Number.isFinite(v) ? v : 0 }); }} />
           </Field>
           <Field label="পাইকারি (৳)">
@@ -372,7 +372,7 @@ function ProductFormModal({
         </div>
         {isEdit && priceChanged && (
           <Field label="দাম পরিবর্তনের কারণ *" hint="এই তথ্য দামের ইতিহাসে সংরক্ষিত হবে">
-            <TextInput value={priceReason} onChange={(e) => setPriceReason(e.target.value)} placeholder="যেমন: সরবরাহকারীর নতুন মূল্য" />
+            <TextInput value={priceReason} onChange={(e) => setPriceReason(e.target.value)} placeholder="যেমন: সাপ্লায়ারের নতুন মূল্য" />
           </Field>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
@@ -382,16 +382,16 @@ function ProductFormModal({
           <Field label="অন্যান্য বারকোড" hint="কমা দিয়ে আলাদা">
             <TextInput value={f.extraBarcodes} onChange={(e) => set({ extraBarcodes: e.target.value })} placeholder="৮৯০..., ৮৯১..." />
           </Field>
-          <Field label="পুনরায় অর্ডার স্তর" hint="এই মাত্রার নিচে গেলে সতর্কতা">
+          <Field label="পুনরায় অর্ডার সীমা" hint="এই মাত্রার নিচে গেলে সতর্কতা">
             <TextInput inputMode="numeric" value={f.reorder || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ reorder: Number.isFinite(v) ? v : 0 }); }} />
           </Field>
         </div>
         {!isEdit && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="প্রারম্ভিক স্টক" hint="খালি/০ হলে পরে ক্রয় দিয়ে স্টক আসবে">
+            <Field label="প্রাথমিক স্টক" hint="খালি/০ হলে পরে ক্রয় দিয়ে স্টক আসবে">
               <TextInput inputMode="decimal" value={f.openingStock || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ openingStock: Number.isFinite(v) ? v : 0 }); }} />
             </Field>
-            <Field label="প্রারম্ভিক স্টকের খরচ (৳)" hint="খালি থাকলে খরচদাম ধরা হবে">
+            <Field label="প্রাথমিক স্টকের খরচ (৳)" hint="খালি থাকলে খরচদাম ধরা হবে">
               <TextInput inputMode="decimal" className="input-money" value={f.openingCost || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ openingCost: Number.isFinite(v) ? v : 0 }); }} />
             </Field>
           </div>
@@ -413,10 +413,10 @@ function PriceHistoryModal({ token, product, onClose }: { token: string; product
       ) : (
         <DataTable
           cols={[
-            { key: 'created_at', label: 'তারিখ', render: (r) => fmtDate((r.changed_at as number) ?? (r.created_at as number) ?? null) },
+            { key: 'created_at', label: 'তারিখ', render: (r) => fmtDate((r.changed_at as number) ?? null) },
             { key: 'field', label: 'ফিল্ড', render: (r) => String(r.field ?? '') },
-            { key: 'before', label: 'আগে', align: 'right', render: (r) => <Money paise={Number(r.before_value ?? 0)} /> },
-            { key: 'after', label: 'পরে', align: 'right', render: (r) => <Money paise={Number(r.after_value ?? 0)} /> },
+            { key: 'before', label: 'আগে', align: 'right', render: (r) => <Money paise={Number(r.old_value ?? 0)} /> },
+            { key: 'after', label: 'পরে', align: 'right', render: (r) => <Money paise={Number(r.new_value ?? 0)} /> },
             { key: 'reason', label: 'কারণ', render: (r) => String(r.reason ?? '—') },
             { key: 'user', label: 'কারী', render: (r) => String(r.user_name ?? '—') }
           ]}

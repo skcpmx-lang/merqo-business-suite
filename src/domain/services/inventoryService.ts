@@ -14,10 +14,12 @@
  * same method (§28).
  */
 import type { DB } from '../db/connection';
+import { tx } from '../db/connection';
 import { generateId } from '../../shared/ids';
-import { roundToPaise } from '../../shared/money';
 import { getProduct } from '../repos/master';
-import { NotFoundError, InsufficientStockError } from '../errors';
+import { allocateReference } from '../repos/sequences';
+import { formatReference, REF_PREFIX } from '../../shared/refs';
+import { NotFoundError, InsufficientStockError, ValidationError } from '../errors';
 
 export const QTY_EPS = 0.00001;
 export function roundQty(q: number): number {
@@ -161,59 +163,74 @@ export interface AdjustInput extends MovementInput {
   /** 'increase' | 'decrease' | 'damaged' | 'expired' | 'correction' */
   adjustmentType: string;
   quantity: number;
-  referenceNo: string;
   reason: string;
 }
 
-/** Audited manual stock adjustment (§27). Decrease cannot create negative stock. */
-export function adjustStock(db: DB, input: AdjustInput): string {
+/**
+ * Audited manual stock adjustment (§27). Decrease cannot create negative
+ * stock. Runs in its own transaction and allocates a real STA-xxxxxx
+ * reference (the caller never supplies the reference number).
+ */
+export function adjustStock(db: DB, input: AdjustInput): { id: string; referenceNo: string } {
   const product = getProduct(db, input.productId);
   if (!product) throw new NotFoundError('পণ্য', input.productId);
   const qty = roundQty(Math.abs(input.quantity));
-  if (qty <= 0) throw new Error('adjust: quantity must be positive');
+  if (qty <= 0) throw new ValidationError('পরিমাণ সঠিক নয়।');
+  if (!input.reason?.trim()) throw new ValidationError('সমন্বয়ের কারণ লিখুন।');
 
-  upsertStockRow(db, input.businessId, input.productId);
-  const stock = getStock(db, input.businessId, input.productId);
-  const increasing = input.adjustmentType === 'increase' || input.adjustmentType === 'correction';
-
-  let newQty: number;
-  if (increasing) {
-    newQty = roundQty(stock.quantity + qty);
-  } else {
-    if (stock.quantity + QTY_EPS < qty) {
-      throw new InsufficientStockError(product.name, stock.quantity, qty);
-    }
-    newQty = roundQty(stock.quantity - qty);
-  }
-
-  db.prepare('UPDATE inventory SET quantity = ?, updated_at = ? WHERE business_id = ? AND product_id = ?')
-    .run(newQty, input.at ?? Date.now(), input.businessId, input.productId);
-
+  const at = input.at ?? Date.now();
   const adjId = generateId();
-  db.prepare(
-    `INSERT INTO stock_adjustments
-     (id, business_id, product_id, reference_no, adjustment_type, quantity, unit_cost_paise, reason, note, user_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    adjId, input.businessId, input.productId, input.referenceNo, input.adjustmentType,
-    increasing ? qty : -qty, stock.avgCostPaise, input.reason, input.note ?? '', input.userId ?? null,
-    input.at ?? Date.now()
-  );
+  let referenceNo = '';
 
-  recordMovement(db, {
-    businessId: input.businessId,
-    productId: input.productId,
-    userId: input.userId,
-    movementType: input.adjustmentType,
-    quantity: increasing ? qty : -qty,
-    unitCostPaise: stock.avgCostPaise,
-    referenceType: 'stock_adjustment',
-    referenceId: adjId,
-    reason: input.reason,
-    note: input.note,
-    at: input.at
+  tx(db, () => {
+    const n = allocateReference(db, REF_PREFIX.stockAdjustment);
+    referenceNo = formatReference(REF_PREFIX.stockAdjustment, n);
+
+    upsertStockRow(db, input.businessId, input.productId);
+    const stock = getStock(db, input.businessId, input.productId);
+    const increasing = input.adjustmentType === 'increase' || input.adjustmentType === 'correction';
+
+    let newQty: number;
+    if (increasing) {
+      newQty = roundQty(stock.quantity + qty);
+    } else {
+      if (stock.quantity + QTY_EPS < qty) {
+        throw new InsufficientStockError(product.name, stock.quantity, qty);
+      }
+      newQty = roundQty(stock.quantity - qty);
+    }
+
+    db.prepare('UPDATE inventory SET quantity = ?, updated_at = ? WHERE business_id = ? AND product_id = ?')
+      .run(newQty, at, input.businessId, input.productId);
+
+    db.prepare(
+      `INSERT INTO stock_adjustments
+       (id, business_id, product_id, reference_no, adjustment_type, quantity, unit_cost_paise, reason, note, user_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      adjId, input.businessId, input.productId, referenceNo, input.adjustmentType,
+      increasing ? qty : -qty, stock.avgCostPaise, input.reason, input.note ?? '', input.userId ?? null,
+      at
+    );
+
+    // The movement ledger uses one stable type for manual adjustments
+    // ('adjustment'); the fine-grained type lives in stock_adjustments,
+    // reachable via reference_id.
+    recordMovement(db, {
+      businessId: input.businessId,
+      productId: input.productId,
+      userId: input.userId,
+      movementType: 'adjustment',
+      quantity: increasing ? qty : -qty,
+      unitCostPaise: stock.avgCostPaise,
+      referenceType: 'stock_adjustment',
+      referenceId: adjId,
+      reason: input.reason,
+      note: input.note,
+      at
+    });
   });
-  return adjId;
+  return { id: adjId, referenceNo };
 }
 
 export function movementHistory(db: DB, businessId: string, productId?: string, limit = 200, offset = 0) {
@@ -225,10 +242,17 @@ export function movementHistory(db: DB, businessId: string, productId?: string, 
   }
   const rows = db
     .prepare(
-      `SELECT m.*, p.name AS product_name, u.name AS user_name
+      `SELECT m.*, p.name AS product_name, u.name AS user_name,
+              COALESCE(sa.reference_no, s.reference_no, sr.reference_no,
+                       pu.reference_no, pr.reference_no) AS reference_no
        FROM inventory_movements m
        JOIN products p ON p.id = m.product_id
        LEFT JOIN users u ON u.id = m.user_id
+       LEFT JOIN stock_adjustments sa ON sa.id = m.reference_id AND m.reference_type = 'stock_adjustment'
+       LEFT JOIN sales s ON s.id = m.reference_id AND m.reference_type = 'sale'
+       LEFT JOIN sales_returns sr ON sr.id = m.reference_id AND m.reference_type = 'sales_return'
+       LEFT JOIN purchases pu ON pu.id = m.reference_id AND m.reference_type = 'purchase'
+       LEFT JOIN purchase_returns pr ON pr.id = m.reference_id AND m.reference_type = 'purchase_return'
        WHERE ${where.join(' AND ')}
        ORDER BY m.created_at DESC, m.id DESC
        LIMIT ? OFFSET ?`

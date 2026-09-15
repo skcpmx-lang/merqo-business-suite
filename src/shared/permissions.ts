@@ -11,7 +11,8 @@ export const PERMISSIONS = [
   { key: 'sales.void', label: 'বিক্রয় বাতিল/বিলগা করুন' },
   { key: 'sales.return', label: 'বিক্রয় ফেরত নিন' },
   { key: 'sales.priceOverride', label: 'দাম পরিবর্তন করুন' },
-  { key: 'sales.discount', label: 'ডিসকাউন্ট দিন' },
+  { key: 'sales.discount', label: 'ছাড় দিন' },
+  { key: 'sales.creditOverride', label: 'উজড় সীমা অতিক্রম করুন (বিশেষ অনুমতি)' },
   // Purchases
   { key: 'purchases.view', label: 'ক্রয় দেখুন' },
   { key: 'purchases.create', label: 'ক্রয় তৈরি করুন' },
@@ -57,7 +58,7 @@ export const PERMISSIONS = [
   { key: 'users.manage', label: 'ব্যবহারকারী ও ভূমিকা পরিবর্তন করুন' },
   { key: 'settings.manage', label: 'সেটিংস পরিবর্তন করুন' },
   { key: 'backup.create', label: 'ব্যাকআপ তৈরি করুন' },
-  { key: 'backup.restore', label: 'ব্যাকআপ রিস্টোর করুন' },
+  { key: 'backup.restore', label: 'ব্যাকআপ পুনরুদ্ধার করুন' },
   { key: 'audit.view', label: 'অডিট লগ দেখুন' },
   { key: 'data.delete', label: 'ডাটা মুছে ফেলুন (নিয়ন্ত্রিত)'}
 ] as const;

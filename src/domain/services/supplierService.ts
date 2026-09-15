@@ -32,7 +32,7 @@ export function createSupplier(db: DB, input: SupplierInput): string {
   const id = generateId();
   const at = input.at ?? Date.now();
   const opening = input.openingPayablePaise ?? 0;
-  if (opening < 0) throw new ValidationError('প্রারম্ভিক প্রদেয় ঋণাত্মক হতে পারে না।');
+  if (opening < 0) throw new ValidationError('প্রাথমিক প্রদেয় ঋণাত্মক হতে পারে না।');
   tx(db, () => {
     db.prepare(
       `INSERT INTO suppliers (id, business_id, name, company, phone, email, address, contact_person,
@@ -47,7 +47,7 @@ export function createSupplier(db: DB, input: SupplierInput): string {
     if (opening > 0) {
       db.prepare(
         `INSERT INTO supplier_transactions (id, business_id, supplier_id, transaction_type, amount_paise, note, user_id, created_at)
-         VALUES (?, ?, ?, 'opening', ?, 'প্রারম্ভিক প্রদেয়', ?, ?)`
+         VALUES (?, ?, ?, 'opening', ?, 'প্রাথমিক প্রদেয়', ?, ?)`
       ).run(generateId(), input.businessId, id, opening, input.userId ?? null, at);
     }
     recordAudit(db, { businessId: input.businessId, userId: input.userId, action: 'supplier.create', entityType: 'supplier', entityId: id, after: { name: input.name } });
@@ -57,11 +57,14 @@ export function createSupplier(db: DB, input: SupplierInput): string {
 
 export function updateSupplier(
   db: DB,
+  businessId: string,
   id: string,
   patch: Partial<Omit<SupplierInput, 'businessId' | 'openingPayablePaise'>>,
   userId?: string
 ): void {
-  const existing = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const existing = db
+    .prepare('SELECT * FROM suppliers WHERE id = ? AND business_id = ?')
+    .get(id, businessId) as Record<string, unknown> | undefined;
   if (!existing) throw new NotFoundError('সাপ্লায়ার', id);
   const sets: string[] = ['updated_at = ?'];
   const params: unknown[] = [Date.now()];
@@ -76,10 +79,9 @@ export function updateSupplier(
     }
   }
   if ('isActive' in patch) sets.push('is_active = ?'), params.push(patch.isActive ? 1 : 0);
-  if (existing.payable_balance_paise !== 0) {
-    throw new ConflictError('প্রদেয় থাকা সাপ্লায়ারের প্রোফাইল সম্পাদনায় সতর্ক থাকুন।');
-  }
-  db.prepare(`UPDATE suppliers SET ${sets.join(', ')} WHERE id = ?`).run(...params, id);
+  // Editing profile fields is always allowed, even with an outstanding
+  // payable; the ledger is untouched here.
+  db.prepare(`UPDATE suppliers SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).run(...params, id, businessId);
   recordAudit(db, { businessId: (existing.business_id as string), userId, action: 'supplier.update', entityType: 'supplier', entityId: id });
 }
 
@@ -109,29 +111,29 @@ export function listSuppliers(
   return { rows, total: total.c };
 }
 
-export function getSupplier(db: DB, id: string) {
+export function getSupplier(db: DB, businessId: string, id: string) {
   const row = db
     .prepare(
       `SELECT s.*,
               COALESCE((SELECT SUM(amount_paise) FROM supplier_transactions st WHERE st.supplier_id = s.id AND st.transaction_type IN ('purchase','opening')), 0) AS total_purchases_paise,
               COALESCE((SELECT SUM(amount_paise) FROM supplier_transactions st WHERE st.supplier_id = s.id AND st.transaction_type = 'payment'), 0) AS total_paid_paise,
               COALESCE((SELECT SUM(amount_paise) FROM supplier_transactions st WHERE st.supplier_id = s.id AND st.transaction_type = 'purchase_return'), 0) AS total_returns_paise
-       FROM suppliers s WHERE s.id = ?`
+       FROM suppliers s WHERE s.id = ? AND s.business_id = ?`
     )
-    .get(id) as Record<string, unknown> | undefined;
+    .get(id, businessId) as Record<string, unknown> | undefined;
   if (!row) return undefined;
   return row;
 }
 
-export function supplierLedger(db: DB, supplierId: string, from?: number, to?: number, limit = 300) {
+export function supplierLedger(db: DB, businessId: string, supplierId: string, from?: number, to?: number, limit = 300) {
   return db
     .prepare(
       `SELECT t.*, u.name AS user_name
        FROM supplier_transactions t LEFT JOIN users u ON u.id = t.user_id
-       WHERE t.supplier_id = ? ${from !== undefined ? 'AND t.created_at >= ?' : ''} ${to !== undefined ? 'AND t.created_at <= ?' : ''}
+       WHERE t.business_id = ? AND t.supplier_id = ? ${from !== undefined ? 'AND t.created_at >= ?' : ''} ${to !== undefined ? 'AND t.created_at <= ?' : ''}
        ORDER BY t.created_at DESC, t.id DESC LIMIT ?`
     )
-    .all(supplierId, ...(from !== undefined ? [from] : []), ...(to !== undefined ? [to] : []), limit) as Record<string, unknown>[];
+    .all(businessId, supplierId, ...(from !== undefined ? [from] : []), ...(to !== undefined ? [to] : []), limit) as Record<string, unknown>[];
 }
 
 export interface PaySupplierInput {

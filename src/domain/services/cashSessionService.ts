@@ -24,7 +24,7 @@ export function openShift(
     .prepare("SELECT id FROM cash_sessions WHERE business_id = ? AND status = 'open' AND user_id = ?")
     .get(input.businessId, input.userId);
   if (open) throw new ConflictError('এই ব্যবহারকারীর একটি শিফট ইতিমধ্যে খোলা আছে।');
-  if (input.openingCashPaise < 0) throw new ValidationError('প্রারম্ভিক নগদ ঋণাত্মক হতে পারে না।');
+  if (input.openingCashPaise < 0) throw new ValidationError('প্রাথমিক নগদ ঋণাত্মক হতে পারে না।');
 
   const id = generateId();
   let referenceNo = '';
@@ -73,10 +73,12 @@ export function shiftCashSummary(
 ) {
   const uCond = userId ? 'AND t.user_id = ?' : '';
   const uParams = userId ? [userId] : [];
+  // A sales refund (sale_refund) always posts a negative amount, so it can
+  // only ever leave the drawer — it is listed under cash_out, never cash_in.
   const base = `
     SELECT
       COALESCE(SUM(CASE WHEN t.amount_paise > 0 AND t.transaction_type IN
-        ('sale','customer_collection','transfer_in','deposit','adjustment_in','mfs_cash_in','purchase_refund','sale_refund')
+        ('sale','customer_collection','transfer_in','deposit','adjustment_in','mfs_cash_in','purchase_refund')
         THEN t.amount_paise ELSE 0 END), 0) AS cash_in,
       COALESCE(SUM(CASE WHEN t.amount_paise < 0 AND t.transaction_type IN
         ('purchase_payment','expense','transfer_out','withdrawal','adjustment_out','mfs_cash_out','supplier_payment','sale_refund')
@@ -162,16 +164,21 @@ export function dailyClosingReport(db: DB, businessId: string, at: number = Date
     return row ? Object.fromEntries(Object.entries(row).map(([k, v]) => [k, Number(v)])) : {};
   };
 
+  // COGS is net of returned (restocked) goods so the closing figure matches
+  // the profit & loss (same domain logic as reportService.salesSummary).
   const sales = sum(`
     SELECT
       COALESCE(SUM(total_paise), 0) AS gross_sales,
       COALESCE(SUM(discount_paise), 0) AS discounts,
       COALESCE(SUM(total_paise - discount_paise + tax_paise - tax_paise), 0) AS net_base,
       COALESCE(SUM(CASE WHEN status <> 'voided' THEN total_paise ELSE 0 END), 0) AS net_sales,
-      COALESCE(SUM(CASE WHEN status <> 'voided' THEN cogs_paise ELSE 0 END), 0) AS cogs,
+      COALESCE(SUM(CASE WHEN status <> 'voided' THEN cogs_paise ELSE 0 END), 0)
+        - COALESCE((SELECT SUM(cogs_paise) FROM sales_returns
+                    WHERE business_id = ? AND date >= ? AND date <= ? AND status <> 'voided'), 0) AS cogs,
       COALESCE(SUM(CASE WHEN status <> 'voided' THEN due_paise ELSE 0 END), 0) AS credit_due_created,
       COALESCE(SUM(CASE WHEN status <> 'voided' THEN paid_paise ELSE 0 END), 0) AS sale_payments
-    FROM sales WHERE business_id = ? AND date >= ? AND date <= ?`);
+    FROM sales WHERE business_id = ? AND date >= ? AND date <= ?`,
+    [businessId, from, to, businessId, from, to]);
 
   const salesReturns = sum(`
     SELECT COALESCE(SUM(total_paise), 0) AS total FROM sales_returns

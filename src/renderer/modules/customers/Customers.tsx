@@ -57,7 +57,7 @@ export function Customers() {
       <div className="page-head">
         <div>
           <div className="page-title">কাস্টমার</div>
-          <div className="page-sub">বকেয়া ও ক্রেডিট হিসাব</div>
+          <div className="page-sub">বকেয়া ও উজড় হিসাব</div>
         </div>
         <div className="toolbar">
           <label className="checkbox-row">
@@ -155,7 +155,7 @@ function CustomerFormModal({ customer, onClose, onSaved }: { customer: Row | nul
           <Field label="ফোন">
             <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="০১XXXXXXXXX" />
           </Field>
-          <Field label="ক্রেডিট সীমা (৳)" hint="এই মাত্রার বেশি বকেয়াতে সতর্কতা">
+          <Field label="উজড় সীমা (৳)" hint="এই মাত্রার বেশি বকেয়াতে সতর্কতা">
             <TextInput inputMode="decimal" className="input-money" value={creditLimit || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); setCreditLimit(Number.isFinite(v) ? v : 0); }} />
           </Field>
         </div>
@@ -203,7 +203,7 @@ function LedgerModal({ token, customer, onClose }: { token: string; customer: Ro
               const map: Record<string, { label: string; cls: string }> = {
                 sale: { label: 'বকেয়া বিক্রয়', cls: 'badge-red' },
                 payment: { label: 'বকেয়া আদায়', cls: 'badge-green' },
-                opening: { label: 'প্রারম্ভিক', cls: 'badge-gray' },
+                opening: { label: 'প্রাথমিক', cls: 'badge-gray' },
                 sale_return: { label: 'বিক্রয় ফেরত', cls: 'badge-amber' },
                 adjustment: { label: 'সমন্বয়', cls: 'badge-gray' }
               };
@@ -211,7 +211,7 @@ function LedgerModal({ token, customer, onClose }: { token: string; customer: Ro
               return <span className={`badge ${m.cls}`}>{m.label}</span>;
             }
           },
-          { key: 'reference_no', label: 'রফারেন্স', render: (r) => String(r.reference_no ?? '—') },
+          { key: 'reference_no', label: 'রেফারেন্স', render: (r) => String(r.reference_no ?? '—') },
           { key: 'amount_paise', label: 'পরিমাণ', align: 'right', render: (r) => <Money paise={(r.amount_paise as number) ?? 0} /> },
           { key: 'balance_after', label: 'বকেযা (পর)', align: 'right', render: (r) => <strong><Money paise={runningBalance.get(String(r.id)) ?? 0} /></strong> },
           { key: 'note', label: 'নোট', render: (r) => String(r.note ?? '—') }
@@ -236,7 +236,7 @@ function CollectModal({ token, customer, onClose, onDone }: { token: string; cus
     setBusy(true);
     try {
       const res = await api.customers.collect(token, { customerId: String(customer.id), amountPaise: toPaise(amount), method }, idemKey());
-      toast('success', 'বকেয়া আদায় হয়েছে', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'বকেয়া আদায় হয়েছে', `রেফারেন্স: ${res.referenceNo}`);
       onDone();
     } catch (e) {
       toast('error', 'আদায় করা যায়নি', errMsg(e));

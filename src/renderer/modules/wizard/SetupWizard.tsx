@@ -9,7 +9,7 @@ import { api, errMsg } from '../../lib/api';
 import { useToast } from '../../ui';
 import { toPaise } from '@shared/money';
 
-const STEPS = ['ব্যবসার তথ্য', 'প্রারম্ভিক ব্যালেন্স', 'অ্যাকাউন্ট'];
+const STEPS = ['ব্যবসার তথ্য', 'প্রাথমিক ব্যালেন্স', 'অ্যাকাউন্ট'];
 
 export function SetupWizard() {
   const toast = useToast();

@@ -36,7 +36,7 @@ export function Accounts() {
       )
     },
     {
-      key: 'opening_balance_paise', label: 'প্রারম্ভিক', align: 'right', render: (r) => <Money paise={(r.opening_balance_paise as number) ?? 0} />
+      key: 'opening_balance_paise', label: 'প্রাথমিক', align: 'right', render: (r) => <Money paise={(r.opening_balance_paise as number) ?? 0} />
     }
   ];
 
@@ -45,7 +45,7 @@ export function Accounts() {
       <div className="page-head">
         <div>
           <div className="page-title">হিসাব ও ট্রান্সফার</div>
-          <div className="page-sub">দোকানের সব মাধ্যমের ব্যালেন্স</div>
+          <div className="page-sub">নগদ, ব্যাংক, MFS — সব হিসাবের ব্যালেন্স</div>
         </div>
         {can('accounts.transfer') && (
           <Button variant="primary" icon={<ArrowLeftRight size={16} />} onClick={() => setTransferring(true)}>
@@ -113,7 +113,7 @@ function AccountLedgerModal({ token, account, onClose }: { token: string; accoun
         cols={[
           { key: 'created_at', label: 'তারিখ', render: (r) => fmtDateTime((r.created_at as number) ?? null) },
           { key: 'transaction_type', label: 'ধরন', render: (r) => String(r.transaction_type) },
-          { key: 'reference_no', label: 'রফারেন্স', render: (r) => String(r.reference_no ?? '—') },
+          { key: 'reference_no', label: 'রেফারেন্স', render: (r) => String(r.reference_no ?? '—') },
           { key: 'note', label: 'বিবরণ', render: (r) => String(r.note ?? '—') },
           {
             key: 'amount_paise', label: 'পরিমাণ', align: 'right', render: (r) => {
@@ -153,7 +153,7 @@ function TransferModal({ accounts, onClose, onDone }: { accounts: Row[]; onClose
         amountPaise: toPaise(amount),
         note: note.trim() || undefined
       }, idemKey());
-      toast('success', 'ট্রান্সফার সম্পন্ন', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'ট্রান্সফার সম্পন্ন', `রেফারেন্স: ${res.referenceNo}`);
       onDone();
     } catch (e) {
       toast('error', 'ট্রান্সফার হয়নি', errMsg(e));

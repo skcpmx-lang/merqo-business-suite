@@ -41,7 +41,7 @@ export function Mfs() {
   };
 
   const cols: Col<Row>[] = [
-    { key: 'reference_no', label: 'রফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
+    { key: 'reference_no', label: 'রেফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
     { key: 'created_at', label: 'তারিখ', render: (r) => fmtDateTime((r.created_at as number) ?? null) },
     { key: 'provider_name', label: 'প্রভাইডার', render: (r) => String(r.provider_name ?? '—') },
     {
@@ -66,7 +66,7 @@ export function Mfs() {
       <div className="page-head">
         <div>
           <div className="page-title">MFS এজেন্ট</div>
-          <div className="page-sub">হাতে লেখা এজেন্ট লেনদেন — কোনো লাইভ API নেই</div>
+          <div className="page-sub">হাতে এন্ট্রি করা এজেন্ট লেনদেন — কোনো লাইভ API নেই</div>
         </div>
         <div className="toolbar">
           <Button variant="outline" icon={<Settings2 size={15} />} onClick={() => setRulesOpen(true)}>কমিশন নিয়ম</Button>
@@ -157,7 +157,7 @@ function ReconciliationCard({ token, providerId }: { token: string; providerId: 
   return (
     <div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-        <div className="stat"><div className="stat-label">প্রারম্ভিক</div><div className="stat-value" style={{ fontSize: 'var(--fs-xl)' }}><Money paise={(data.openingBalancePaise as number) ?? 0} /></div></div>
+        <div className="stat"><div className="stat-label">প্রাথমিক</div><div className="stat-value" style={{ fontSize: 'var(--fs-xl)' }}><Money paise={(data.openingBalancePaise as number) ?? 0} /></div></div>
         <div className="stat"><div className="stat-label">মোট ক্যাশ-ইন</div><div className="stat-value" style={{ fontSize: 'var(--fs-xl)', color: 'var(--c-success)' }}><Money paise={(data.cashInPaise as number) ?? 0} /></div></div>
         <div className="stat"><div className="stat-label">মোট ক্যাশ-আউট</div><div className="stat-value" style={{ fontSize: 'var(--fs-xl)', color: 'var(--c-danger)' }}><Money paise={(data.cashOutPaise as number) ?? 0} /></div></div>
         <div className="stat"><div className="stat-label">আসলে ওয়ালেটে</div><div className="stat-value" style={{ fontSize: 'var(--fs-xl)' }}><Money paise={(data.walletBalancePaise as number) ?? 0} /></div></div>
@@ -170,7 +170,7 @@ function ReconciliationCard({ token, providerId }: { token: string; providerId: 
         </div>
       </div>
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--c-ink-3)', marginTop: 10 }}>
-        হিসাব: প্রারম্ভিক + ক্যাশ-ইন − ক্যাশ-আউট = আসলে থাকা ওয়ালেট। মেললে ব্যবসার বই ঠিক আছে।
+        হিসাব: প্রাথমিক + ক্যাশ-ইন − ক্যাশ-আউট = আসলে থাকা ওয়ালেট। মেললে ব্যবসার বই ঠিক আছে।
       </p>
     </div>
   );
@@ -204,7 +204,7 @@ function MfsTxnModal({ providers, onClose, onDone }: { providers: Row[]; onClose
         },
         idemKey()
       );
-      toast('success', 'MFS লেনদেন লেখা হয়েছে', `রফারেন্স: ${res.referenceNo}${res.commissionPaise ? `, কমিশন: ${formatBdtBn(res.commissionPaise)}` : ''}`);
+      toast('success', 'MFS লেনদেন লেখা হয়েছে', `রেফারেন্স: ${res.referenceNo}${res.commissionPaise ? `, কমিশন: ${formatBdtBn(res.commissionPaise)}` : ''}`);
       onDone();
     } catch (e) {
       toast('error', 'লেখা যায়নি', errMsg(e));
@@ -220,7 +220,7 @@ function MfsTxnModal({ providers, onClose, onDone }: { providers: Row[]; onClose
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>বাতিল</Button>
-          <Button variant="primary" loading={busy} disabled={!providerId || amount <= 0} onClick={save}>লেখুন</Button>
+          <Button variant="primary" loading={busy} disabled={!providerId || amount <= 0} onClick={save}>যোগ করুন</Button>
         </>
       }
     >
@@ -253,7 +253,7 @@ function MfsTxnModal({ providers, onClose, onDone }: { providers: Row[]; onClose
             <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="ঐচ্ছিক" />
           </Field>
         </div>
-        <Field label="প্রভাইডারের লেনদেন নং" hint="bKash/Nagad-এর ট্রানজেকশন রফারেন্স">
+        <Field label="প্রভাইডারের লেনদেন নং" hint="bKash/Nagad-এর ট্রানজেকশন রেফারেন্স">
           <TextInput value={ref} onChange={(e) => setRef(e.target.value)} placeholder="ঐচ্ছিক" />
         </Field>
       </div>
@@ -367,8 +367,8 @@ function CommissionRulesModal({ providers, onClose }: { providers: Row[]; onClos
         {current && (
           <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--c-ink-3)' }}>
             বর্তমান নিয়ম: {(current.rate_bps as number) ? `${((current.rate_bps as number) / 100).toLocaleString('en-IN')}%` : `৳${(((current.fixed_amount_paise as number) ?? 0) / 100).toLocaleString('en-IN')}`}
-            {(current.min_paise as number) ? ` (min ৳${((current.min_paise as number) / 100).toLocaleString('en-IN')})` : ''}
-            {(current.max_paise as number) ? ` (max ৳${((current.max_paise as number) / 100).toLocaleString('en-IN')})` : ''}
+            {(current.min_paise as number) ? ` (ন্যূনতম ৳${((current.min_paise as number) / 100).toLocaleString('en-IN')})` : ''}
+            {(current.max_paise as number) ? ` (সর্বোচ্চ ৳${((current.max_paise as number) / 100).toLocaleString('en-IN')})` : ''}
           </p>
         )}
         <div className="table-wrap" style={{ borderRadius: 10 }}>
@@ -388,7 +388,7 @@ function CommissionRulesModal({ providers, onClose }: { providers: Row[]; onClos
                     {(r.rate_bps as number) ? `${((r.rate_bps as number) / 100).toLocaleString('en-IN')}%` : `৳${(((r.fixed_amount_paise as number) ?? 0) / 100).toLocaleString('en-IN')}`}
                     {(r.min_paise as number) || (r.max_paise as number) ? (
                       <span style={{ color: 'var(--c-ink-3)', marginLeft: 6 }}>
-                        (min ৳{(((r.min_paise as number) ?? 0) / 100).toLocaleString('en-IN')} / max ৳{(((r.max_paise as number) ?? 0) / 100).toLocaleString('en-IN')})
+                        (ন্যূনতম ৳{(((r.min_paise as number) ?? 0) / 100).toLocaleString('en-IN')} / সর্বোচ্চ ৳{(((r.max_paise as number) ?? 0) / 100).toLocaleString('en-IN')})
                       </span>
                     ) : null}
                   </td>

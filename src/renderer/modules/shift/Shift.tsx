@@ -44,8 +44,8 @@ export function Shift() {
             <div className="empty-icon"><CircleDollarSign size={22} /></div>
             <div className="empty-title">দোকান খুলতে শিফট খুলুন</div>
             <div className="empty-sub">
-              প্রারম্ভিক নগদ টেনে-গুনে লিখুন। দোকান বন্ধের সময় একইভাবে নগদ গণনা করে শিফট বন্ধ করলে
-              হিসাবের সাথে মিলে যায় — তারতম্য থাকলে সাথে সাথে দেখা যাবে।
+              প্রাথমিক নগদ টেনে-গুনে লিখুন। দোকান বন্ধের সময় একইভাবে নগদ গণনা করে শিফট বন্ধ করলে
+              হিসাবের সাথে মিলে যায় — ফারাক থাকলে সাথে সাথে দেখা যাবে।
             </div>
           </div>
         </div>
@@ -109,7 +109,7 @@ function OpenShiftPanel({ token, shift, onClose, onOpenedChange }: { token: stri
       </div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <div className="stat">
-          <div className="stat-label">প্রারম্ভিক নগদ</div>
+          <div className="stat-label">প্রাথমিক নগদ</div>
           <div className="stat-value"><Money paise={opening} /></div>
         </div>
         <div className="stat">
@@ -140,7 +140,7 @@ function OpenModal({ token, onClose, onDone }: { token: string; onClose: () => v
     setBusy(true);
     try {
       const res = await api.shift.open(token, { openingCashPaise: toPaise(opening), note: note.trim() || undefined, idempotencyKey: idemKey() });
-      toast('success', 'শিফট খোলা হয়েছে', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'শিফট খোলা হয়েছে', `রেফারেন্স: ${res.referenceNo}`);
       onDone();
     } catch (e) {
       toast('error', 'শিফট খোলা যায়নি', errMsg(e));
@@ -164,7 +164,7 @@ function OpenModal({ token, onClose, onDone }: { token: string; onClose: () => v
         <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--c-ink-2)', lineHeight: 1.6 }}>
           টেনে-গুনে ক্যাশ ডেসকে যে নগদ আছে তা লিখুন। পরের বিক্রয়/খরচ সব হিসাবে যোগ-বিয়োগ হবে।
         </p>
-        <Field label="প্রারম্ভিক নগদ (৳) *">
+        <Field label="প্রাথমিক নগদ (৳) *">
           <TextInput inputMode="decimal" className="input-money" value={opening || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); setOpening(Number.isFinite(v) ? v : 0); }} autoFocus />
         </Field>
         <Field label="নোট">
@@ -209,7 +209,7 @@ function CloseModal({ token, shift, onClose, onDone }: { token: string; shift: R
       toast(
         res.variancePaise === 0 ? 'success' : 'warn',
         'শিফট বন্ধ হয়েছে',
-        `তারতম্য: ${formatBdtBn(res.variancePaise)}`
+        `ফারাক: ${formatBdtBn(res.variancePaise)}`
       );
       onDone();
     } catch (e) {
@@ -234,7 +234,7 @@ function CloseModal({ token, shift, onClose, onDone }: { token: string; shift: R
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-          <div className="detail-cell"><div className="k">প্রারম্ভিক নগদ</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}><Money paise={opening} /></div></div>
+          <div className="detail-cell"><div className="k">প্রাথমিক নগদ</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}><Money paise={opening} /></div></div>
           <div className="detail-cell"><div className="k">নেট নগদ চলাচল</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}>{summary ? formatBdtBn(summary.cashIn - summary.cashOut) : '…'}</div></div>
           <div className="detail-cell"><div className="k">হিসাবে হওয়া উচিত</div><div className="v" style={{ fontSize: 'var(--fs-md)', color: 'var(--c-primary)' }}><Money paise={expected} /></div></div>
         </div>
@@ -255,14 +255,14 @@ function CloseModal({ token, shift, onClose, onDone }: { token: string; shift: R
             className="detail-cell"
             style={{ background: variance === 0 ? 'var(--c-success-soft)' : 'var(--c-warn-soft)', borderColor: variance === 0 ? 'var(--c-success)' : 'var(--c-warn)' }}
           >
-            <div className="k">তারতম্য</div>
+            <div className="k">ফারাক</div>
             <div className="v" style={{ color: variance === 0 ? 'var(--c-success)' : 'var(--c-warn)' }}>
               {formatBdtBn(variance)}
             </div>
           </div>
         )}
         <Field label="নোট">
-          <TextInput value={note} onChange={(e) => setNote(e.target.value)} placeholder="যেমন: তারতম্যের কারণ" />
+          <TextInput value={note} onChange={(e) => setNote(e.target.value)} placeholder="যেমন: ফারাকের কারণ" />
         </Field>
       </div>
     </Modal>
@@ -279,15 +279,15 @@ function ShiftHistory({ token }: { token: string }) {
   const { data } = useAsync(async () => await api.shift.list(token, { limit: 100 }), [token]);
   const rows = (data ?? []) as Row[];
   const cols: Col<Row>[] = [
-    { key: 'reference_no', label: 'রফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
+    { key: 'reference_no', label: 'রেফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
     { key: 'opened_at', label: 'খোলা', render: (r) => fmtDateTime((r.opened_at as number) ?? null) },
     { key: 'closed_at', label: 'বন্ধ', render: (r) => fmtDateTime((r.closed_at as number) ?? null) },
     { key: 'user_name', label: 'ক্যাশিয়ার', render: (r) => String(r.user_name ?? '—') },
-    { key: 'opening_cash_paise', label: 'প্রারম্ভিক', align: 'right', render: (r) => <Money paise={(r.opening_cash_paise as number) ?? 0} /> },
+    { key: 'opening_cash_paise', label: 'প্রাথমিক', align: 'right', render: (r) => <Money paise={(r.opening_cash_paise as number) ?? 0} /> },
     { key: 'expected_cash_paise', label: 'হিসাবমত', align: 'right', render: (r) => <Money paise={(r.expected_cash_paise as number) ?? 0} /> },
     { key: 'actual_cash_paise', label: 'হাতে', align: 'right', render: (r) => <Money paise={(r.actual_cash_paise as number) ?? 0} /> },
     {
-      key: 'variance_paise', label: 'তারতম্য', align: 'right', render: (r) => {
+      key: 'variance_paise', label: 'ফারাক', align: 'right', render: (r) => {
         const v = (r.variance_paise as number) ?? 0;
         if ((r.status as string) === 'open') return <span className="badge badge-blue">খোলা</span>;
         return v === 0 ? <span className="badge badge-green">মিলেছে</span> : <span className="badge badge-amber">{formatBdtBn(v)}</span>;
@@ -314,7 +314,7 @@ function DailyClosing({ token }: { token: string }) {
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <div className="stat"><div className="stat-label">আজকের বিক্রয় (নিট)</div><div className="stat-value"><Money paise={(data.netSales as number) ?? 0} /></div></div>
         <div className="stat"><div className="stat-label">COGS</div><div className="stat-value"><Money paise={(data.cogs as number) ?? 0} /></div></div>
-        <div className="stat"><div className="stat-label">খচরা লাভ</div><div className="stat-value" style={{ color: 'var(--c-success)' }}><Money paise={(data.grossProfit as number) ?? 0} /></div></div>
+        <div className="stat"><div className="stat-label">মূল লব্ধি</div><div className="stat-value" style={{ color: 'var(--c-success)' }}><Money paise={(data.grossProfit as number) ?? 0} /></div></div>
         <div className="stat"><div className="stat-label">আজকের খরচ</div><div className="stat-value" style={{ color: 'var(--c-warn)' }}><Money paise={(data.expenses as number) ?? 0} /></div></div>
       </div>
       <div style={{ height: 14 }} />

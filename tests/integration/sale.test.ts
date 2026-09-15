@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { makeEnv, makeProduct, type TestEnv } from '../helpers';
 import { createSale, voidSale, holdSale, listHeldCarts, resumeHeldSale, cancelHeldSale, getSale } from '../../src/domain/services/saleService';
 import { createCustomer, collectCustomerPayment, customerLedger } from '../../src/domain/services/customerService';
+import { createSalesReturn } from '../../src/domain/services/returnService';
 import { getAccount, listAccounts, accountTransactions, recomputedBalance } from '../../src/domain/services/accountService';
 import { getStock, reconcileInventory } from '../../src/domain/services/inventoryService';
 import { ValidationError, InsufficientStockError, CreditLimitError } from '../../src/domain/errors';
@@ -42,7 +43,7 @@ describe('sale → stock → payment → customer ledger (integration)', () => {
     expect(after.quantity).toBe(before.quantity - 10);
     expect(cashBalance()).toBe(cashBefore + 60000);
 
-    const sale = getSale(env.db, res.saleId)!;
+    const sale = getSale(env.db, env.businessId, res.saleId)!;
     expect(sale.items).toHaveLength(1);
     expect(sale.cogs_paise).toBe(10 * 4000); // ৳400 COGS @ ৳40 avg
   });
@@ -111,7 +112,7 @@ describe('sale → stock → payment → customer ledger (integration)', () => {
     const cust = env.db.prepare('SELECT due_balance_paise FROM customers WHERE id = ?').get(customer) as { due_balance_paise: number };
     expect(cust.due_balance_paise).toBe(110000);
 
-    const ledger = customerLedger(env.db, customer);
+    const ledger = customerLedger(env.db, env.businessId, customer);
     expect(ledger).toHaveLength(2);
   });
 
@@ -230,10 +231,72 @@ describe('sale → stock → payment → customer ledger (integration)', () => {
 
     voidSale(env.db, { businessId: env.businessId, saleId: res.saleId, userId: user(), reason: 'ভুল বিক্রয়' });
 
-    const sale = getSale(env.db, res.saleId)!;
+    const sale = getSale(env.db, env.businessId, res.saleId)!;
     expect(sale.status).toBe('voided');
     expect(getStock(env.db, env.businessId, product).quantity).toBe(stockBefore);
     expect(cashBalance()).toBe(cashBefore);
+    const cust = env.db.prepare('SELECT due_balance_paise FROM customers WHERE id = ?').get(customer) as { due_balance_paise: number };
+    expect(cust.due_balance_paise).toBe(0);
+  });
+
+  it('sales return on a credit sale splits between due and cash (settlement)', () => {
+    const customer = createCustomer(env.db, {
+      businessId: env.businessId,
+      name: 'নাছিম',
+      creditLimitPaise: 1000000,
+      userId: user()
+    });
+    const product = makeProduct(env, { name: 'মুরগি', sku: 'CHK-1', cost: 60000, price: 100000, stock: 20 });
+    const cashBefore = cashBalance();
+    const stockBefore = getStock(env.db, env.businessId, product).quantity;
+
+    // Total ৳2,000, paid ৳500 cash → due ৳1,500 on the sale
+    const res = createSale(env.db, {
+      businessId: env.businessId,
+      userId: user(),
+      customerId: customer,
+      lines: [{ productId: product, quantity: 2 }],
+      payments: [{ method: 'cash', amountPaise: 50000 }]
+    });
+    expect(res.duePaise).toBe(150000);
+    const detail = getSale(env.db, env.businessId, res.saleId)!;
+
+    // First return (1 unit = ৳1,000): customer has due, so it settles
+    // entirely against the receivable — no cash moves, due drops by ৳1,000.
+    const r1 = createSalesReturn(env.db, {
+      businessId: env.businessId,
+      userId: user(),
+      saleId: res.saleId,
+      reason: 'গুণগত মান সমস্যা',
+      items: [{ saleItemId: detail.items[0].id, quantity: 1, restock: true }]
+    });
+    expect(r1.method).toBe('receivable');
+    expect(r1.totalRefundPaise).toBe(100000);
+    expect(r1.receivableReductionPaise).toBe(100000);
+    expect(r1.accountRefundPaise).toBe(0);
+    expect(cashBalance()).toBe(cashBefore + 50000); // unchanged by the return
+    expect(getSale(env.db, env.businessId, res.saleId)!.due_paise).toBe(50000);
+    expect(getStock(env.db, env.businessId, product).quantity).toBe(stockBefore - 1);
+
+    // Second return (last unit = ৳1,000): only ৳500 of due remains, so
+    // ৳500 settles the due and the pre-paid ৳500 comes back from cash.
+    const r2 = createSalesReturn(env.db, {
+      businessId: env.businessId,
+      userId: user(),
+      saleId: res.saleId,
+      reason: 'ব্যাল ভাঙা',
+      items: [{ saleItemId: detail.items[0].id, quantity: 1, restock: true }]
+    });
+    expect(r2.method).toBe('receivable');
+    expect(r2.totalRefundPaise).toBe(100000);
+    expect(r2.receivableReductionPaise).toBe(50000);
+    expect(r2.accountRefundPaise).toBe(50000);
+    // cash: +50000 (original payment) - 50000 (refund) = back to start
+    expect(cashBalance()).toBe(cashBefore);
+    expect(getSale(env.db, env.businessId, res.saleId)!.due_paise).toBe(0);
+    expect(getSale(env.db, env.businessId, res.saleId)!.status).toBe('refunded');
+    expect(getStock(env.db, env.businessId, product).quantity).toBe(stockBefore);
+
     const cust = env.db.prepare('SELECT due_balance_paise FROM customers WHERE id = ?').get(customer) as { due_balance_paise: number };
     expect(cust.due_balance_paise).toBe(0);
   });
@@ -247,10 +310,10 @@ describe('sale → stock → payment → customer ledger (integration)', () => {
       items: [{ productId: product, quantity: 2 }]
     });
     expect(listHeldCarts(env.db, env.businessId, user())).toHaveLength(1);
-    const resumed = resumeHeldSale(env.db, id)!;
+    const resumed = resumeHeldSale(env.db, env.businessId, id)!;
     expect(resumed.items[0].productId).toBe(product);
     expect(listHeldCarts(env.db, env.businessId, user())).toHaveLength(0);
-    cancelHeldSale(env.db, id);
+    cancelHeldSale(env.db, env.businessId, id);
   });
 
   it('all account balances reconcile with their ledgers', () => {

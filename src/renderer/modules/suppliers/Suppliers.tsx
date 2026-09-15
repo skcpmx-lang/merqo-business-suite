@@ -32,7 +32,7 @@ export function Suppliers() {
     { key: 'phone', label: 'ফোন', render: (r) => <span className="money">{String(r.phone ?? '—')}</span> },
     { key: 'address', label: 'ঠিকানা', render: (r) => String(r.address ?? '—') },
     {
-      key: 'payable_balance_paise', label: 'দেয়াদায়ী', align: 'right', render: (r) => {
+      key: 'payable_balance_paise', label: 'প্রদেয়', align: 'right', render: (r) => {
         const d = (r.payable_balance_paise as number) ?? 0;
         return d > 0 ? <span style={{ color: 'var(--c-warn)', fontWeight: 700 }}><Money paise={d} /></span> : <span style={{ color: 'var(--c-ink-3)' }}>—</span>;
       }
@@ -57,12 +57,12 @@ export function Suppliers() {
       <div className="page-head">
         <div>
           <div className="page-title">সাপ্লায়ার</div>
-          <div className="page-sub">দেয়াদায়ী ও সরবরাহকারীর হিসাব</div>
+          <div className="page-sub">প্রদেয় ও সাপ্লায়ারের হিসাব</div>
         </div>
         <div className="toolbar">
           <label className="checkbox-row">
             <input type="checkbox" checked={onlyPayable} onChange={(e) => { setOnlyPayable(e.target.checked); setPage(0); }} />
-            শুধু দেয়াদায়ী
+            শুধু প্রদেয়
           </label>
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--c-ink-3)' }} />
@@ -79,7 +79,7 @@ export function Suppliers() {
         rows={rows}
         onRow={(r) => setLedger(r)}
         emptyTitle="এখনো কোনো সাপ্লায়ার নেই"
-        emptySub="পণ্য সরবরাহকারী যোগ করলে ক্রয় ও বকেয়া এখানে হিসাব হবে।"
+        emptySub="সাপ্লায়ার যোগ করলে ক্রয় ও বকেয়া এখানে হিসাব হবে।"
         emptyIcon={<Truck size={20} />}
       />
 
@@ -150,7 +150,7 @@ function SupplierFormModal({ supplier, onClose, onSaved }: { supplier: Row | nul
             <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="০১XXXXXXXXX" />
           </Field>
           {!isEdit && (
-            <Field label="আগের বকেয়া (৳)" hint="আগের ব্যবসার দেয়াদায়ী">
+            <Field label="আগের বকেয়া (৳)" hint="আগের ব্যবসার প্রদেয়">
               <TextInput inputMode="decimal" className="input-money" value={openingPayable || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); setOpeningPayable(Number.isFinite(v) ? v : 0); }} />
             </Field>
           )}
@@ -181,7 +181,7 @@ function LedgerModal({ token, supplier, onClose }: { token: string; supplier: Ro
   return (
     <Modal title={`বহি — ${String(supplier.name)}`} size="lg" onClose={onClose} footer={<Button variant="primary" onClick={onClose}>বন্ধ করুন</Button>}>
       <div className="detail-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <div className="detail-cell"><div className="k">বর্তমান দেয়াদায়ী</div><div className="v" style={{ color: 'var(--c-warn)' }}><Money paise={(supplier.payable_balance_paise as number) ?? 0} /></div></div>
+        <div className="detail-cell"><div className="k">বর্তমান প্রদেয়</div><div className="v" style={{ color: 'var(--c-warn)' }}><Money paise={(supplier.payable_balance_paise as number) ?? 0} /></div></div>
         <div className="detail-cell"><div className="k">ফোন</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}>{String(supplier.phone ?? '—')}</div></div>
         <div className="detail-cell"><div className="k">ঠিকানা</div><div className="v" style={{ fontSize: 'var(--fs-md)' }}>{String(supplier.address ?? '—')}</div></div>
       </div>
@@ -194,14 +194,14 @@ function LedgerModal({ token, supplier, onClose }: { token: string; supplier: Ro
               const map: Record<string, { label: string; cls: string }> = {
                 purchase: { label: 'ক্রয় (বকেয়া)', cls: 'badge-amber' },
                 payment: { label: 'পেমেন্ট', cls: 'badge-green' },
-                opening: { label: 'প্রারম্ভিক', cls: 'badge-gray' },
-                purchase_return: { label: 'করয রিটার্ন', cls: 'badge-red' }
+                opening: { label: 'প্রাথমিক', cls: 'badge-gray' },
+                purchase_return: { label: 'ক্রয় ফেরত', cls: 'badge-red' }
               };
               const m = map[t] ?? { label: t, cls: 'badge-gray' };
               return <span className={`badge ${m.cls}`}>{m.label}</span>;
             }
           },
-          { key: 'reference_no', label: 'রফারেন্স', render: (r) => String(r.reference_no ?? '—') },
+          { key: 'reference_no', label: 'রেফারেন্স', render: (r) => String(r.reference_no ?? '—') },
           { key: 'amount_paise', label: 'পরিমাণ', align: 'right', render: (r) => <Money paise={(r.amount_paise as number) ?? 0} /> },
           { key: 'balance_after', label: 'দেযাদা (পর)', align: 'right', render: (r) => <strong><Money paise={runningBalance.get(String(r.id)) ?? 0} /></strong> },
         ]}
@@ -225,7 +225,7 @@ function PayModal({ token, supplier, onClose, onDone }: { token: string; supplie
     setBusy(true);
     try {
       const res = await api.suppliers.pay(token, { supplierId: String(supplier.id), amountPaise: toPaise(amount), method }, idemKey());
-      toast('success', 'পেমেন্ট সম্পন্ন', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'পেমেন্ট সম্পন্ন', `রেফারেন্স: ${res.referenceNo}`);
       onDone();
     } catch (e) {
       toast('error', 'পেমেন্ট করা যায়নি', errMsg(e));
@@ -247,7 +247,7 @@ function PayModal({ token, supplier, onClose, onDone }: { token: string; supplie
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div className="detail-cell" style={{ background: 'var(--c-warn-soft)' }}>
-          <div className="k">বর্তমান দেয়াদায়ী</div>
+          <div className="k">বর্তমান প্রদেয়</div>
           <div className="v" style={{ color: 'var(--c-warn)' }}><Money paise={payable} /></div>
         </div>
         <Field label="পেমেন্টের পরিমাণ (৳)">

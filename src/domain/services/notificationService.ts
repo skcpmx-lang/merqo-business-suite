@@ -9,6 +9,13 @@ import { getSetting } from '../repos/settings';
 import { formatBdt } from '../../shared/money';
 import { toBanglaDigits } from '../../shared/dates';
 
+/**
+ * Create a notification, deduplicating on (business, type, entity) while an
+ * unread copy exists. The scanner runs on startup / stock changes / day
+ * rollover, so without dedup the same warning would flood the bell on every
+ * scan. Returns the id of the stored (existing or new) notification, or
+ * null when deduplicated.
+ */
 export function createNotification(
   db: DB,
   input: {
@@ -21,7 +28,19 @@ export function createNotification(
     entityId?: string;
     actionRoute?: string;
   }
-): string {
+): string | null {
+  const existing = db
+    .prepare(
+      `SELECT id FROM notifications
+       WHERE business_id = ? AND type = ? AND is_read = 0
+         AND COALESCE(entity_type, '') = ? AND COALESCE(entity_id, '') = ?`
+    )
+    .get(
+      input.businessId, input.type,
+      input.entityType ?? '', input.entityId ?? ''
+    ) as { id: string } | undefined;
+  if (existing) return existing.id;
+
   const id = generateId();
   db.prepare(
     `INSERT INTO notifications (id, business_id, type, severity, title, body, entity_type, entity_id, action_route, is_read, created_at)
@@ -57,16 +76,16 @@ export function unreadCount(db: DB, businessId: string): number {
   return row.c;
 }
 
-export function markRead(db: DB, id: string): void {
-  db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
+export function markRead(db: DB, businessId: string, id: string): void {
+  db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND business_id = ?').run(id, businessId);
 }
 
 export function markAllRead(db: DB, businessId: string): void {
   db.prepare('UPDATE notifications SET is_read = 1 WHERE business_id = ? AND is_read = 0').run(businessId);
 }
 
-export function deleteNotification(db: DB, id: string): void {
-  db.prepare('DELETE FROM notifications WHERE id = ?').run(id);
+export function deleteNotification(db: DB, businessId: string, id: string): void {
+  db.prepare('DELETE FROM notifications WHERE id = ? AND business_id = ?').run(id, businessId);
 }
 
 /**
@@ -76,6 +95,11 @@ export function deleteNotification(db: DB, id: string): void {
  */
 export function scanAndNotify(db: DB, businessId: string): number {
   const created: string[] = [];
+  // Count only notifications actually stored (dedup returns null on skip).
+  const notify = (input: Parameters<typeof createNotification>[1]) => {
+    const id = createNotification(db, input);
+    if (id) created.push(id);
+  };
 
   // Low stock
   const lowStockEnabled = getSetting<boolean>(db, businessId, 'notifications', 'low_stock_enabled', true);
@@ -89,8 +113,7 @@ export function scanAndNotify(db: DB, businessId: string): number {
       )
       .all(businessId) as { id: string; name: string; quantity: number; reorder_level: number }[];
     for (const p of low) {
-      created.push(
-        createNotification(db, {
+      notify({
           businessId,
           type: 'low_stock',
           severity: 'warning',
@@ -99,8 +122,7 @@ export function scanAndNotify(db: DB, businessId: string): number {
           entityType: 'product',
           entityId: p.id,
           actionRoute: '/inventory'
-        })
-      );
+        });
     }
   }
 
@@ -114,18 +136,16 @@ export function scanAndNotify(db: DB, businessId: string): number {
     )
     .all(businessId) as { id: string; name: string }[];
   for (const p of out) {
-    created.push(
-      createNotification(db, {
+    notify({
         businessId,
         type: 'out_of_stock',
         severity: 'critical',
-        title: `স্টক শেষ: ${p.name}`,
-        body: 'এই পণ্যের মজুদ শেষ। নতুন ক্রয় প্রয়োজন।',
+          title: `স্টক শেষ: ${p.name}`,
+          body: 'এই পণ্যের স্টক শেষ। নতুন ক্রয় প্রয়োজন।',
         entityType: 'product',
         entityId: p.id,
         actionRoute: '/inventory'
-      })
-    );
+      });
   }
 
   // Expiring batches
@@ -142,8 +162,7 @@ export function scanAndNotify(db: DB, businessId: string): number {
     .all(businessId, horizon) as { id: string; product_id: string; expiry_date: number; quantity: number; product_name: string; batch_no: string }[];
   for (const b of expiring) {
     const expired = b.expiry_date <= now;
-    created.push(
-      createNotification(db, {
+    notify({
         businessId,
         type: expired ? 'expired_stock' : 'expiring_stock',
         severity: expired ? 'critical' : 'warning',
@@ -152,8 +171,7 @@ export function scanAndNotify(db: DB, businessId: string): number {
         entityType: 'batch',
         entityId: b.id,
         actionRoute: '/inventory'
-      })
-    );
+      });
   }
 
   // Large customer due
@@ -167,8 +185,7 @@ export function scanAndNotify(db: DB, businessId: string): number {
       )
       .all(businessId) as { id: string; name: string; due_balance_paise: number }[];
     for (const c of dues) {
-      created.push(
-        createNotification(db, {
+      notify({
           businessId,
           type: 'customer_due',
           severity: 'info',
@@ -177,27 +194,26 @@ export function scanAndNotify(db: DB, businessId: string): number {
           entityType: 'customer',
           entityId: c.id,
           actionRoute: '/customers'
-        })
-      );
+        });
     }
   }
 
   // Backup reminder
   const reminderDays = getSetting<number>(db, businessId, 'notifications', 'backup_reminder_days', 7);
+  // Backups are recorded with status 'verified' (see backupService); 'completed'
+  // is kept for tolerance of older rows.
   const lastBackup = db
-    .prepare('SELECT MAX(created_at) AS last FROM backups WHERE business_id = ? AND status = \'completed\'')
+    .prepare('SELECT MAX(created_at) AS last FROM backups WHERE business_id = ? AND status IN (\'verified\', \'completed\')')
     .get(businessId) as { last: number | null };
   if (reminderDays > 0 && (!lastBackup.last || now - lastBackup.last > reminderDays * 86400000)) {
-    created.push(
-      createNotification(db, {
+    notify({
         businessId,
         type: 'backup_reminder',
         severity: 'info',
         title: 'ব্যাকআপ করার সময় হয়েছে',
         body: `সর্বশেষ ব্যাকআপের ${lastBackup.last ? 'পরে' : 'পর্যন্ত'} নিয়মিত ব্যাকআপ নেওয়া হয়নি।`,
         actionRoute: '/backup'
-      })
-    );
+      });
   }
 
   return created.length;

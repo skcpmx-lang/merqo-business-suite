@@ -8,6 +8,7 @@ import { api, errMsg, idemKey } from '../../lib/api';
 import type { Row } from '@shared/ipc';
 import { Button, DataTable, type Col, Modal, Field, TextInput, SelectInput, Money, useToast, fmtDate, Bn, Empty } from '../../ui';
 import { toPaise, fromPaise } from '@shared/money';
+import { fromYMD } from '@shared/dates';
 import { PAYMENT_METHODS, paymentMethodLabel } from '@shared/payments';
 
 interface PLLine {
@@ -16,6 +17,8 @@ interface PLLine {
   quantity: number;
   cost: number; // taka
   unitName: string;
+  batchNo: string;
+  expiryDate: string; // YYYY-MM-DD (ঐচ্ছিক)
 }
 
 interface PLPay {
@@ -40,7 +43,7 @@ export function Purchases() {
   const rows = useMemo(() => (data?.rows ?? []) as Row[], [data]);
 
   const cols: Col<Row>[] = [
-    { key: 'reference_no', label: 'রফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
+    { key: 'reference_no', label: 'রেফারেন্স', render: (r) => <strong>{String(r.reference_no)}</strong> },
     { key: 'date', label: 'তারিখ', render: (r) => fmtDate((r.date as number) ?? null) },
     { key: 'supplier_name', label: 'সাপ্লায়ার', render: (r) => String(r.supplier_name ?? '—') },
     { key: 'supplier_invoice_no', label: 'সাপ্লায়ারের ইনভয়েস', render: (r) => String(r.supplier_invoice_no ?? '—') },
@@ -63,7 +66,7 @@ export function Purchases() {
         <div className="toolbar">
           <div style={{ position: 'relative' }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--c-ink-3)' }} />
-            <TextInput style={{ paddingLeft: 30 }} placeholder="রফারেন্স / সাপ্লায়ার…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
+            <TextInput style={{ paddingLeft: 30 }} placeholder="রেফারেন্স / সাপ্লায়ার…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
           </div>
           {can('purchases.create') && (
             <Button variant="primary" icon={<Plus size={16} />} onClick={() => setCreating(true)}>
@@ -78,7 +81,7 @@ export function Purchases() {
         rows={rows}
         onRow={(r) => setDetail(r)}
         emptyTitle="এখনো কোনো ক্রয় নেই"
-        emptySub="সরবরাহকারীর কাছ থেকে পণ্য ক্রয় করলে এখানে দেখা যাবে।"
+        emptySub="সাপ্লায়ারের কাছ থেকে পণ্য ক্রয় করলে এখানে দেখা যাবে।"
         emptyIcon={<ShoppingBag size={20} />}
       />
 
@@ -125,7 +128,7 @@ function PurchaseFormModal({ onClose, onSaved }: { onClose: () => void; onSaved:
   function addLine() {
     const p = products[0];
     if (!p) return;
-    setLines((ls) => [...ls, { productId: String(p.id), name: String(p.name), quantity: 1, cost: fromPaise((p.purchase_price_paise as number) ?? 0), unitName: String(p.unit_name ?? 'পিস') }]);
+    setLines((ls) => [...ls, { productId: String(p.id), name: String(p.name), quantity: 1, cost: fromPaise((p.purchase_price_paise as number) ?? 0), unitName: String(p.unit_name ?? 'পিস'), batchNo: '', expiryDate: '' }]);
   }
 
   function setLine(i: number, patch: Partial<PLLine>) {
@@ -143,12 +146,13 @@ function PurchaseFormModal({ onClose, onSaved }: { onClose: () => void; onSaved:
           productId: l.productId,
           quantity: l.quantity,
           unitCostPaise: toPaise(l.cost),
-          batchId: null
+          batchNo: l.batchNo.trim() || undefined,
+          expiryDate: l.expiryDate ? fromYMD(l.expiryDate) : undefined
         })),
         payments: payments.filter((p) => p.amount > 0).map((p) => ({ method: p.method, amountPaise: toPaise(p.amount) })),
         idempotencyKey: idemKey()
       });
-      toast('success', 'ক্রয় সম্পন্ন', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'ক্রয় সম্পন্ন', `রেফারেন্স: ${res.referenceNo}`);
       onSaved();
     } catch (e) {
       toast('error', 'ক্রয় সম্পন্ন হয়নি', errMsg(e));
@@ -196,13 +200,15 @@ function PurchaseFormModal({ onClose, onSaved }: { onClose: () => void; onSaved:
               <th>পণ্য</th>
               <th style={{ width: 90 }}>পরিমাণ</th>
               <th style={{ width: 120 }}>খরচদাম (৳)</th>
+              <th style={{ width: 110 }}>ব্যাচ নং</th>
+              <th style={{ width: 140 }}>মেয়াদ (ঐচ্ছিক)</th>
               <th style={{ width: 110 }} className="num">লাইন মোট</th>
               <th style={{ width: 44 }}></th>
             </tr>
           </thead>
           <tbody>
             {lines.length === 0 && (
-              <tr><td colSpan={5}><Empty title="কোনো পণ্য যোগ করা হয়নি" compact sub="নিচে “পণ্য যোগ করুন” চাপুন।" /></td></tr>
+              <tr><td colSpan={7}><Empty title="কোনো পণ্য যোগ করা হয়নি" compact sub="নিচে “পণ্য যোগ করুন” চাপুন।" /></td></tr>
             )}
             {lines.map((l, i) => (
               <tr key={i}>
@@ -221,6 +227,12 @@ function PurchaseFormModal({ onClose, onSaved }: { onClose: () => void; onSaved:
                 </td>
                 <td>
                   <TextInput inputMode="decimal" className="input-money" value={l.cost || ''} onChange={(e) => { const v = Number(e.target.value); setLine(i, { cost: Number.isFinite(v) ? v : 0 }); }} />
+                </td>
+                <td>
+                  <TextInput value={l.batchNo} onChange={(e) => setLine(i, { batchNo: e.target.value })} placeholder="ঐচ্ছিক" />
+                </td>
+                <td>
+                  <TextInput type="date" value={l.expiryDate} onChange={(e) => setLine(i, { expiryDate: e.target.value })} />
                 </td>
                 <td className="num strong">৳{(((l.quantity * toPaise(l.cost)) / 100).toFixed(2)).replace(/\.00$/, '')}</td>
                 <td>
@@ -309,7 +321,7 @@ function PurchaseDetailModal({
         },
         idemKey()
       );
-      toast('success', 'করয রিটার্ন সম্পন্ন');
+      toast('success', 'ক্রয় ফেরত সম্পন্ন');
       setReturning(false);
       setRetQty({});
       onChanged();

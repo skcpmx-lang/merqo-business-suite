@@ -8,9 +8,15 @@
  *   3. record the completion audit on the restored DB
  *   4. relaunch
  */
-import { existsSync, renameSync, unlinkSync } from 'node:fs';
+import { existsSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 let pendingRestorePath: string | null = null;
+
+/** Marker left after a successful swap; the next startup records the audit. */
+export function restoreMarkerPath(dbFile: string): string {
+  return path.join(path.dirname(dbFile), 'restore-completed');
+}
 
 export function setRestorePending(tempPath: string): void {
   pendingRestorePath = tempPath;
@@ -42,6 +48,13 @@ export function performRestore(dbFile: string): boolean {
       unlinkSafe(`${dbFile}${suffix}`);
     }
     pendingRestorePath = null;
+    // The next startup records the restore-completion audit on the
+    // (now restored) database.
+    try {
+      writeFileSync(restoreMarkerPath(dbFile), new Date().toISOString());
+    } catch {
+      // audit marker is best-effort
+    }
     return true;
   } catch (e) {
     console.error('[merqo] restore failed:', e);

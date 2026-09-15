@@ -71,7 +71,7 @@ export class InsufficientStockError extends MerqoError {
   ) {
     super(
       'INSUFFICIENT_STOCK',
-      `“${productName}”-এর পর্যাপ্ত স্টক নেই। (মজুদ: ${available}, চাওয়া: ${requested})`,
+      `“${productName}”-এর পর্যাপ্ত স্টক নেই। (স্টক: ${available}, চাওয়া: ${requested})`,
       undefined,
       { productName, available, requested }
     );
@@ -83,7 +83,7 @@ export class InsufficientFundsError extends MerqoError {
   constructor(accountName: string, available: number, requested: number) {
     super(
       'INSUFFICIENT_FUNDS',
-      `“${accountName}” হিসাবে পর্যাপ্ত ব্যালেন্স নেই।`,
+      `“${accountName}” হিসাবের পর্যাপ্ত ব্যালেন্স নেই।`,
       undefined,
       { accountName, available, requested }
     );
@@ -95,7 +95,7 @@ export class CreditLimitError extends MerqoError {
   constructor(customerName: string, limit: number, newDue: number) {
     super(
       'CREDIT_LIMIT',
-      `“${customerName}”-এর উজড় সীমা অতিক্রম হবে। অথরিটেশন প্রয়োজন।`,
+      `“${customerName}”-এর উজড় সীমা অতিক্রম হবে। এই বিক্রয়ের জন্য বিশেষ অনুমতি প্রয়োজন।`,
       undefined,
       { customerName, limit, newDue }
     );

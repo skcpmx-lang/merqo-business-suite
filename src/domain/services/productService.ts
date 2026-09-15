@@ -42,7 +42,7 @@ export function createProduct(db: DB, input: CreateProductInput): string {
     if (dup) throw new ConflictError(`এই বারকোড (${b}) ইতিমধ্যে অন্য পণ্যে ব্যবহৃত হচ্ছে।`);
   }
   if (rest.sellingPricePaise !== undefined && rest.sellingPricePaise < 0) throw new ValidationError('দাম ঋণাত্মক হতে পারে না।');
-  if (openingStock !== undefined && openingStock < 0) throw new ValidationError('প্রারম্ভিক স্টক ঋণাত্মক হতে পারে না।');
+  if (openingStock !== undefined && openingStock < 0) throw new ValidationError('প্রাথমিক স্টক ঋণাত্মক হতে পারে না।');
 
   let id = '';
   tx(db, () => {
@@ -60,7 +60,7 @@ export function createProduct(db: DB, input: CreateProductInput): string {
         quantity: openingStock,
         unitCostPaise: openingCostPaise ?? rest.purchasePricePaise ?? 0,
         movementType: 'opening_stock',
-        reason: 'প্রারম্ভিক স্টক',
+        reason: 'প্রাথমিক স্টক',
         userId
       });
     }
@@ -126,7 +126,7 @@ export function updateProductSafe(db: DB, input: UpdateProductInput): void {
         }
       }
     }
-    updateProduct(db, input.productId, patch, input.userId);
+    updateProduct(db, input.businessId, input.productId, patch, input.userId);
     if (input.newBarcodes) {
       setProductBarcodes(db, input.businessId, input.productId, input.newBarcodes);
     }
@@ -146,7 +146,7 @@ export function softDeleteProduct(db: DB, input: { businessId: string; userId: s
   if (stock.q > 0.00001) {
     throw new ConflictError('স্টক থাকা পণ্য মুছে ফেলা যায় না — আগে স্টক সমন্বয় করুন।');
   }
-  updateProduct(db, input.productId, { status: 'deleted' }, input.userId);
+  updateProduct(db, input.businessId, input.productId, { status: 'deleted' }, input.userId);
   recordAudit(db, {
     businessId: input.businessId, userId: input.userId, action: 'product.delete',
     entityType: 'product', entityId: input.productId, before: { name: product.name }
@@ -184,7 +184,7 @@ export function getProductDetail(db: DB, businessId: string, productId: string) 
   const batches = db
     .prepare("SELECT * FROM product_batches WHERE product_id = ? AND status = 'active' ORDER BY expiry_date IS NULL, expiry_date ASC")
     .all(productId) as Record<string, unknown>[];
-  const priceHistory = listPriceHistory(db, productId, 20);
+  const priceHistory = listPriceHistory(db, businessId, productId, 20);
   const stock = db
     .prepare('SELECT quantity, avg_cost_paise FROM inventory WHERE product_id = ? AND business_id = ?')
     .get(productId, businessId) as { quantity: number; avg_cost_paise: number } | undefined;

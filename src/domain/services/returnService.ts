@@ -39,7 +39,7 @@ export interface CreateSalesReturnInput {
 }
 
 export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
-  const sale = getSale(db, input.saleId);
+  const sale = getSale(db, input.businessId, input.saleId);
   if (!sale) throw new NotFoundError('বিক্রয়', input.saleId);
   if (sale.status === 'voided') throw new ConflictError('বিলগা করা বিক্রয়ের ফেরত নেওয়া যায় না।');
 
@@ -68,18 +68,23 @@ export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
     }[];
 
   let totalRefund = 0;
+  let totalCogs = 0;
   const lines = input.items.map((it) => {
     const item = saleItems.find((s) => s.id === it.saleItemId);
     if (!item) throw new NotFoundError('বিক্রয় আইটেম', it.saleItemId);
     const already = returnedMap.get(it.saleItemId) ?? 0;
-    if (it.quantity + already + QTY_EPS > item.quantity) {
+    if (it.quantity + already > item.quantity + QTY_EPS) {
       throw new ValidationError(`“${item.product_name_snapshot}”-এর ফেরত পরিমাণ বিক্রয় পরিমাণের বেশি হতে পারে না।`);
     }
     // prorate line totals by quantity
     const frac = it.quantity / item.quantity;
     const lineTotal = Math.round(item.line_total_paise * frac);
+    // COGS of the returned quantity (restocked lines only) — kept so profit
+    // aggregates can net it out against the sale's COGS.
+    const lineCogs = it.restock ? Math.round(item.cogs_paise * frac) : 0;
     totalRefund += lineTotal;
-    return { item, qty: it.quantity, restock: it.restock, lineTotal };
+    totalCogs += lineCogs;
+    return { item, qty: it.quantity, restock: it.restock, lineTotal, lineCogs };
   });
   if (totalRefund <= 0) throw new ValidationError('ফেরতের পরিমাণ সঠিক নয়।');
   if (totalRefund > totalPaise) throw new ValidationError('ফেরতের অর্থ বিক্রয়ের মোটের বেশি হতে পারে না।');
@@ -89,6 +94,8 @@ export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
 
   const returnId = generateId();
   let referenceNo = '';
+  let accountRefund = 0;
+  let receivableReduction = 0;
   const at = input.at ?? Date.now();
 
   tx(db, () => {
@@ -97,9 +104,9 @@ export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
 
     db.prepare(
       `INSERT INTO sales_returns
-       (id, business_id, sale_id, customer_id, reference_no, date, reason, total_paise, refund_paise, status, user_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)`
-    ).run(returnId, input.businessId, saleId, customer, referenceNo, at, input.reason ?? '', totalRefund, totalRefund, input.userId, at);
+       (id, business_id, sale_id, customer_id, reference_no, date, reason, total_paise, refund_paise, cogs_paise, status, user_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)`
+    ).run(returnId, input.businessId, saleId, customer, referenceNo, at, input.reason ?? '', totalRefund, totalRefund, totalCogs, input.userId, at);
 
     for (const l of lines) {
       db.prepare(
@@ -125,25 +132,43 @@ export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
       }
     }
 
-    if (method === 'refund') {
+    // Settlement split: 'receivable' reduces the customer's due only up to
+    // what is actually owed; the remainder (e.g. the pre-paid portion of the
+    // sale) comes back from the account. 'refund' pays the full amount from
+    // the account. This keeps the customer due from going negative and the
+    // cash in hand always true.
+    if (method === 'receivable' && customer && duePaise > 0) {
+      receivableReduction = Math.min(totalRefund, duePaise);
+      accountRefund = totalRefund - receivableReduction;
+    } else {
+      accountRefund = totalRefund;
+    }
+
+    if (receivableReduction > 0 && customer) {
+      postCustomerLedger(db, input.businessId, customer, {
+        type: 'sale_return',
+        amountPaise: receivableReduction,
+        referenceType: 'sales_return',
+        referenceId: returnId,
+        referenceNo,
+        note: `বিক্রয় ফেরত ${referenceNo} — বকেয়া কমানো`,
+        userId: input.userId,
+        at
+      });
+      // Keep the sale's own outstanding balance in sync: reports compute
+      // current credit dues from sales.due_paise, so every receivable
+      // reduction here must come out of it (never below zero).
+      db.prepare('UPDATE sales SET due_paise = MAX(0, due_paise - ?), updated_at = ? WHERE id = ?')
+        .run(receivableReduction, at, saleId);
+    }
+    if (accountRefund > 0) {
       const refundAccount = findAccountByMethod(db, input.businessId, input.refundPaymentMethod ?? 'cash');
       if (!refundAccount) throw new ValidationError('ফেরতের জন্য সক্রিয় হিসাব নেই।');
       post(db, {
         businessId: input.businessId,
         accountId: refundAccount,
         type: 'sale_refund',
-        amountPaise: -totalRefund,
-        referenceType: 'sales_return',
-        referenceId: returnId,
-        referenceNo,
-        note: `বিক্রয় ফেরত ${referenceNo}`,
-        userId: input.userId,
-        at
-      });
-    } else if (customer) {
-      postCustomerLedger(db, input.businessId, customer, {
-        type: 'sale_return',
-        amountPaise: totalRefund,
+        amountPaise: -accountRefund,
         referenceType: 'sales_return',
         referenceId: returnId,
         referenceNo,
@@ -154,20 +179,22 @@ export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
     }
 
     // Update sale status based on how much of each line has been returned
+    // (SUM of all non-voided return rows — a line is fully returned only
+    // when its accumulated returned quantity reaches the sold quantity).
     const hasUnreturned = db
       .prepare(
         `SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE 1 END AS has_unreturned
          FROM sale_items si
          WHERE si.sale_id = ?
-           AND NOT EXISTS (
-             SELECT 1 FROM sales_return_items sri
+           AND (
+             SELECT COALESCE(SUM(sri.quantity), 0)
+             FROM sales_return_items sri
              JOIN sales_returns sr ON sr.id = sri.return_id
              WHERE sri.sale_item_id = si.id AND sr.status <> 'voided'
-               AND sri.quantity + 0.00001 >= si.quantity
-           )`
+           ) + 0.00001 < si.quantity`
       )
       .get(saleId) as { has_unreturned: number };
-    const newStatus = hasUnreturned ? 'partially_refunded' : 'refunded';
+    const newStatus = hasUnreturned.has_unreturned ? 'partially_refunded' : 'refunded';
     db.prepare('UPDATE sales SET status = ?, updated_at = ? WHERE id = ?').run(newStatus, at, saleId);
 
     recordAudit(db, {
@@ -181,6 +208,9 @@ export function createSalesReturn(db: DB, input: CreateSalesReturnInput) {
   return {
     returnId, referenceNo, totalRefundPaise: totalRefund,
     method,
+    accountRefundPaise: accountRefund,
+    receivableReductionPaise: receivableReduction,
+    cogsPaise: totalCogs,
     saleStatus: db.prepare('SELECT status FROM sales WHERE id = ?').get(saleId) as { status: string }
   };
 }
@@ -205,7 +235,7 @@ export interface CreatePurchaseReturnInput {
 }
 
 export function createPurchaseReturn(db: DB, input: CreatePurchaseReturnInput) {
-  const purchase = getPurchase(db, input.purchaseId);
+  const purchase = getPurchase(db, input.businessId, input.purchaseId);
   if (!purchase) throw new NotFoundError('ক্রয়', input.purchaseId);
 
   const purchaseId = purchase.id as string;
@@ -234,7 +264,7 @@ export function createPurchaseReturn(db: DB, input: CreatePurchaseReturnInput) {
     const item = purchaseItems.find((p) => p.id === it.purchaseItemId);
     if (!item) throw new NotFoundError('ক্রয় আইটেম', it.purchaseItemId);
     const already = returnedMap.get(it.purchaseItemId) ?? 0;
-    if (it.quantity + already + QTY_EPS > item.quantity) {
+    if (it.quantity + already > item.quantity + QTY_EPS) {
       throw new ValidationError(`“${item.product_name_snapshot}”-এর ফেরত পরিমাণ ক্রয় পরিমাণের বেশি হতে পারে না।`);
     }
     const frac = it.quantity / item.quantity;

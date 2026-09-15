@@ -48,9 +48,9 @@ function escapeHtml(v: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-function loadSale(db: DB, saleId: string): SaleDoc {
-  const sale = getSale(db, saleId) as unknown as SaleDoc | undefined;
-  if (!sale) throw new NotFoundError('সেলে', saleId);
+function loadSale(db: DB, businessId: string, saleId: string): SaleDoc {
+  const sale = getSale(db, businessId, saleId) as unknown as SaleDoc | undefined;
+  if (!sale) throw new NotFoundError('বিক্রয়', saleId);
   return sale;
 }
 
@@ -69,8 +69,8 @@ function businessInfo(db: DB, businessId: string): BusinessInfo {
 
 /* ---------------- thermal receipt ---------------- */
 
-export function receiptHtml(db: DB, saleId: string, paper: '57mm' | '80mm' | 'A4' = '80mm'): string {
-  const sale = loadSale(db, saleId);
+export function receiptHtml(db: DB, businessId: string, saleId: string, paper: '57mm' | '80mm' | 'A4' = '80mm'): string {
+  const sale = loadSale(db, businessId, saleId);
   const biz = businessInfo(db, sale.business_id);
   const footer = getSetting<string>(db, sale.business_id, 'invoice', 'footer', 'ধন্যবাদ! আবার আসবেন।');
   const widthMm = paper === '57mm' ? 57 : paper === 'A4' ? 210 : 80;
@@ -141,7 +141,7 @@ export function receiptHtml(db: DB, saleId: string, paper: '57mm' | '80mm' | 'A4
     <tbody>${rows}</tbody>
   </table>
   <hr>
-  <div class="line"><span class="label">সাবটোটাল</span><span>${formatBdt(sale.subtotal_paise as Paise)}</span></div>
+  <div class="line"><span class="label">আংশিক মোট</span><span>${formatBdt(sale.subtotal_paise as Paise)}</span></div>
   ${sale.discount_paise ? `<div class="line"><span class="label">ছাড়</span><span>− ${formatBdt(sale.discount_paise as Paise)}</span></div>` : ''}
   ${sale.tax_paise ? `<div class="line"><span class="label">কর</span><span>${formatBdt(sale.tax_paise as Paise)}</span></div>` : ''}
   <div class="line grand"><span class="label">সর্বমোট</span><span>${formatBdt(sale.total_paise as Paise)}</span></div>
@@ -157,10 +157,12 @@ export function receiptHtml(db: DB, saleId: string, paper: '57mm' | '80mm' | 'A4
 
 /* ---------------- A4 invoice ---------------- */
 
-export function invoiceHtml(db: DB, saleId: string): string {
-  const sale = loadSale(db, saleId);
+export function invoiceHtml(db: DB, businessId: string, saleId: string): string {
+  const sale = loadSale(db, businessId, saleId);
   const biz = businessInfo(db, sale.business_id);
   const footer = getSetting<string>(db, sale.business_id, 'invoice', 'footer', 'ধন্যবাদ! আবার আসবেন।');
+  // Business may opt out of printing the customer's name on invoices.
+  const showCustomerInfo = getSetting<boolean>(db, sale.business_id, 'invoice', 'show_customer_info', true);
 
   const rows = sale.items
     .map(
@@ -231,7 +233,7 @@ export function invoiceHtml(db: DB, saleId: string): string {
   <div class="box">
     <div class="card">
       <div class="label">কাস্টমার</div>
-      <div class="value">${escapeHtml(sale.customer_name ?? 'হেঁচারি কাস্টমার')}</div>
+      <div class="value">${showCustomerInfo ? escapeHtml(sale.customer_name ?? 'সাধারণ কাস্টমার') : '—'}</div>
     </div>
     <div class="card">
       <div class="label">ক্যাশিয়ার</div>
@@ -245,7 +247,7 @@ export function invoiceHtml(db: DB, saleId: string): string {
     <tbody>${rows}</tbody>
   </table>
   <div class="totals">
-    <div class="tline"><span class="label">সাবটোটাল</span><span>${formatBdt(sale.subtotal_paise as Paise)}</span></div>
+    <div class="tline"><span class="label">আংশিক মোট</span><span>${formatBdt(sale.subtotal_paise as Paise)}</span></div>
     ${sale.discount_paise ? `<div class="tline"><span class="label">মোট ছাড়</span><span>− ${formatBdt(sale.discount_paise as Paise)}</span></div>` : ''}
     ${sale.tax_paise ? `<div class="tline"><span class="label">কর</span><span>${formatBdt(sale.tax_paise as Paise)}</span></div>` : ''}
     <div class="tline grand"><span class="label">সর্বমোট</span><span>${formatBdt(sale.total_paise as Paise)}</span></div>

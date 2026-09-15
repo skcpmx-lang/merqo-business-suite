@@ -12,7 +12,9 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, statSync, readFileSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import type { DB } from '../db/connection';
+import { tx } from '../db/connection';
 import { generateId } from '../../shared/ids';
 import { recordAudit } from './auditService';
 import { getSetting, setSetting } from '../repos/settings';
@@ -49,6 +51,33 @@ function sha256File(file: string): string {
 }
 
 /**
+ * Structural sanity check on a backup file BEFORE trusting it for a restore:
+ * open it read-only and run `PRAGMA quick_check`. A matching hash only proves
+ * the file is unchanged since the backup — the database itself can still be
+ * corrupt, so we confirm it opens cleanly first.
+ */
+function quickCheckSqlite(file: string): boolean {
+  let check: Database.Database;
+  try {
+    check = new Database(file, { readonly: true, fileMustExist: true });
+  } catch {
+    return false;
+  }
+  try {
+    const res = check.pragma('quick_check') as { quick_check: string }[];
+    return res.length === 1 && res[0].quick_check === 'ok';
+  } catch {
+    return false;
+  } finally {
+    try {
+      check.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
  * Create a backup. The DB must be the live application database; WAL is
  * checkpointed first so the file copy is a consistent snapshot.
  */
@@ -77,13 +106,16 @@ export function createBackup(
   const size = statSync(filePath).size;
   const sha = sha256File(filePath);
   const id = generateId();
-  db.prepare(
-    `INSERT INTO backups (id, business_id, file_name, file_path, size_bytes, sha256, status, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'verified', ?, ?)`
-  ).run(id, input.businessId, fileName, filePath, size, sha, input.userId ?? null, Date.now());
-  recordAudit(db, {
-    businessId: input.businessId, userId: input.userId, action: 'backup.create',
-    entityType: 'backup', entityId: id, after: { file: fileName, size, sha256: sha.slice(0, 12) }
+  // Registry row + audit must land together (or not at all).
+  tx(db, () => {
+    db.prepare(
+      `INSERT INTO backups (id, business_id, file_name, file_path, size_bytes, sha256, status, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'verified', ?, ?)`
+    ).run(id, input.businessId, fileName, filePath, size, sha, input.userId ?? null, Date.now());
+    recordAudit(db, {
+      businessId: input.businessId, userId: input.userId, action: 'backup.create',
+      entityType: 'backup', entityId: id, after: { file: fileName, size, sha256: sha.slice(0, 12) }
+    });
   });
   return {
     id, file_name: fileName, file_path: filePath, size_bytes: size,
@@ -129,7 +161,12 @@ export function prepareRestore(
   if (!existsSync(b.file_path)) throw new ValidationError('ব্যাকআপ ফাইলটি পাওয়া যাচ্ছে না।');
   const sha = sha256File(b.file_path);
   if (sha !== b.sha256) {
-    throw new ValidationError('ব্যাকআপ ফাইলটি যাচাই করা যায়নি — রিস্টোর সম্ভব নয়।');
+    throw new ValidationError('ব্যাকআপ ফাইলটি যাচাই করা যায়নি — পুনরুদ্ধার সম্ভব নয়।');
+  }
+  // Hash matches, but the database must also open cleanly.
+  if (!quickCheckSqlite(b.file_path)) {
+    db.prepare("UPDATE backups SET status = 'failed' WHERE id = ?").run(b.id);
+    throw new ValidationError('ব্যাকআপ ফাইলটি ক্ষতিগ্রস্ত — পুনরুদ্ধার সম্ভব নয়।');
   }
   const dbFile = (db as unknown as { name: string }).name;
   const tempPath = `${dbFile}.restore-${Date.now()}`;

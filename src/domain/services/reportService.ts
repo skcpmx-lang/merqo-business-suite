@@ -31,13 +31,15 @@ export class Reports {
          COALESCE(SUM(CASE WHEN status <> 'voided' THEN total_paise ELSE 0 END), 0) AS net_sales,
          COALESCE(SUM(CASE WHEN status <> 'voided' THEN discount_paise ELSE 0 END), 0) AS discounts,
          COALESCE(SUM(CASE WHEN status <> 'voided' THEN tax_paise ELSE 0 END), 0) AS tax,
-         COALESCE(SUM(CASE WHEN status <> 'voided' THEN cogs_paise ELSE 0 END), 0) AS cogs,
+         COALESCE(SUM(CASE WHEN status <> 'voided' THEN cogs_paise ELSE 0 END), 0)
+           - COALESCE((SELECT SUM(cogs_paise) FROM sales_returns
+                       WHERE business_id = ? AND date >= ? AND date <= ? AND status <> 'voided'), 0) AS cogs,
          COALESCE(SUM(CASE WHEN status <> 'voided' THEN due_paise ELSE 0 END), 0) AS credit_created,
          COALESCE(SUM(CASE WHEN status <> 'voided' THEN paid_paise ELSE 0 END), 0) AS received,
          COUNT(*) AS sale_count,
          COALESCE((SELECT SUM(total_paise) FROM sales_returns WHERE business_id = ? AND date >= ? AND date <= ? AND status <> 'voided'), 0) AS returns
        FROM sales WHERE business_id = ? AND date >= ? AND date <= ?`,
-      businessId, r.from, r.to, businessId, r.from, r.to
+      businessId, r.from, r.to, businessId, r.from, r.to, businessId, r.from, r.to
     ) as {
       net_sales: number; discounts: number; tax: number; cogs: number;
       credit_created: number; received: number; sale_count: number; returns: number;
@@ -45,12 +47,15 @@ export class Reports {
   }
 
   salesByDay(businessId: string, r: Range, step: 'day' | 'week' | 'month' = 'day') {
+    // 'localtime' so buckets line up with the app's local-day cursor
+    // (shared/dates) — without it, a UTC+6 morning sale lands in the
+    // previous local day.
     const groupExpr =
       step === 'day'
-        ? "strftime('%Y-%m-%d', datetime(date/1000, 'unixepoch'))"
+        ? "strftime('%Y-%m-%d', datetime(date/1000, 'unixepoch', 'localtime'))"
         : step === 'week'
-          ? "strftime('%Y-W%W', datetime(date/1000, 'unixepoch'))"
-          : "strftime('%Y-%m', datetime(date/1000, 'unixepoch'))";
+          ? "strftime('%Y-W%W', datetime(date/1000, 'unixepoch', 'localtime'))"
+          : "strftime('%Y-%m', datetime(date/1000, 'unixepoch', 'localtime'))";
     return this.all(
       `SELECT ${groupExpr} AS bucket,
               COALESCE(SUM(CASE WHEN status <> 'voided' THEN total_paise ELSE 0 END), 0) AS total,
@@ -282,7 +287,7 @@ export class Reports {
 
   cashFlowByDay(businessId: string, r: Range) {
     const rows = this.all(
-      `SELECT ${"strftime('%Y-%m-%d', datetime(t.created_at/1000, 'unixepoch'))"} AS day,
+      `SELECT ${"strftime('%Y-%m-%d', datetime(t.created_at/1000, 'unixepoch', 'localtime'))"} AS day,
               COALESCE(SUM(CASE WHEN t.amount_paise > 0 THEN t.amount_paise ELSE 0 END), 0) AS inflow,
               COALESCE(SUM(CASE WHEN t.amount_paise < 0 THEN -t.amount_paise ELSE 0 END), 0) AS outflow
        FROM account_transactions t JOIN accounts a ON a.id = t.account_id
@@ -347,7 +352,7 @@ export class Reports {
 
   collectionsByDay(businessId: string, r: Range): { day: string; total: number }[] {
     return this.all(
-      `SELECT ${"strftime('%Y-%m-%d', datetime(created_at/1000, 'unixepoch'))"} AS day,
+      `SELECT ${"strftime('%Y-%m-%d', datetime(created_at/1000, 'unixepoch', 'localtime'))"} AS day,
               COALESCE(SUM(amount_paise), 0) AS total
        FROM customer_transactions
        WHERE business_id = ? AND transaction_type = 'payment' AND created_at >= ? AND created_at <= ?

@@ -117,7 +117,7 @@ export function listExpenses(
   return { rows, total: total.c };
 }
 
-export function getExpense(db: DB, id: string) {
+export function getExpense(db: DB, businessId: string, id: string) {
   return db
     .prepare(
       `SELECT e.*, c.name AS category_name, a.name AS account_name, u.name AS user_name
@@ -125,7 +125,7 @@ export function getExpense(db: DB, id: string) {
        JOIN expense_categories c ON c.id = e.category_id
        LEFT JOIN accounts a ON a.id = e.account_id
        LEFT JOIN users u ON u.id = e.user_id
-       WHERE e.id = ?`
+       WHERE e.id = ? AND e.business_id = ?`
     )
-    .get(id) as Record<string, unknown> | undefined;
+    .get(id, businessId) as Record<string, unknown> | undefined;
 }

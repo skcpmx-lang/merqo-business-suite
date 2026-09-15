@@ -16,6 +16,9 @@ import type { Row, SaleCreatedResult } from '@shared/ipc';
 import { Button, Modal, TextInput, SelectInput, Empty, useToast, Money, fmtDate } from '../../ui';
 import { PAYMENT_METHODS, paymentMethodLabel } from '@shared/payments';
 import { toPaise, fromPaise } from '@shared/money';
+import { previewSaleTotals, type SaleFinSettings } from '@shared/saleMath';
+
+const FALLBACK_FIN: SaleFinSettings = { tax_enabled: false, tax_rate_bps: 0, tax_inclusive_prices: false };
 
 interface CartLine {
   productId: string;
@@ -29,6 +32,8 @@ interface CartLine {
 interface PayLine {
   method: string;
   amountTaka: number;
+  reference?: string;
+  chequeNo?: string;
 }
 
 export function Pos() {
@@ -43,6 +48,20 @@ export function Pos() {
 
   const { data: customers } = useAsync(async () => (await api.customers.list(token, {})).rows.slice(0, 200) as Row[], [token]);
   const { data: held } = useAsync(async () => (await api.sales.heldList(token)) as Row[], [token]);
+
+  // Financial settings drive the on-screen totals; using the SAME shared
+  // math as the domain guarantees preview == recorded bill (§120).
+  const { data: finSection } = useAsync(
+    async () => (await api.settings.section(token, 'financial')) as Record<string, unknown>,
+    [token]
+  );
+  const fin: SaleFinSettings = finSection
+    ? {
+        tax_enabled: !!finSection.tax_enabled,
+        tax_rate_bps: Number(finSection.tax_rate_bps ?? 0),
+        tax_inclusive_prices: !!finSection.tax_inclusive_prices
+      }
+    : FALLBACK_FIN;
 
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -120,6 +139,59 @@ export function Pos() {
     };
   }, [token]);
 
+  // pos.default_customer_mode: 'walk_in' (default) resets the customer after
+  // each sale; 'last_used' keeps the last selected customer for the next one.
+  const [customerMode, setCustomerMode] = useState<'walk_in' | 'last_used'>('walk_in');
+  useEffect(() => {
+    let alive = true;
+    api.settings
+      .get(token, 'pos', 'default_customer_mode', 'walk_in')
+      .then((v) => {
+        if (alive) setCustomerMode(v === 'last_used' ? 'last_used' : 'walk_in');
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  // pos.auto_print: send the receipt straight to the printer after a sale.
+  // Failures are silent — the on-screen receipt preview always stays.
+  const printCfg = useRef({ autoPrint: false, paper: '80mm' as '57mm' | '80mm' | 'A4', printer: '' });
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      api.settings.get(token, 'pos', 'auto_print', false),
+      api.settings.get(token, 'pos', 'default_paper', '80mm'),
+      api.settings.get(token, 'pos', 'default_printer', '')
+    ])
+      .then(([ap, paper, printer]) => {
+        if (!alive) return;
+        printCfg.current = {
+          autoPrint: !!ap,
+          paper: paper === '57mm' ? '57mm' : paper === 'A4' ? 'A4' : '80mm',
+          printer: typeof printer === 'string' ? printer : ''
+        };
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  async function maybeAutoPrint(res: SaleCreatedResult) {
+    if (!printCfg.current.autoPrint) return;
+    try {
+      const html = await api.print.receiptHtml(token, res.referenceNo, printCfg.current.paper);
+      await api.print.toPrinter(token, {
+        html,
+        ...(printCfg.current.printer ? { printerName: printCfg.current.printer } : {})
+      });
+    } catch {
+      // printer error is not a sale error
+    }
+  }
+
   function setQty(productId: string, qty: number) {
     setCart((c) =>
       c
@@ -136,12 +208,24 @@ export function Pos() {
     setCart((c) => c.map((l) => (l.productId === productId ? { ...l, unitPricePaise: toPaise(taka) } : l)));
   }
 
-  const subtotal = useMemo(() => cart.reduce((s, l) => s + l.unitPricePaise * l.quantity, 0), [cart]);
-  const discountPaise = Math.min(toPaise(discountTaka), subtotal);
-  const total = Math.max(0, subtotal - discountPaise);
+  const orderDiscountPaise = Math.min(toPaise(discountTaka), cart.reduce((s, l) => s + l.unitPricePaise * l.quantity, 0));
+  // Same formulas as the main-process domain (proration + tax per line),
+  // so the totals shown here are exactly what gets recorded.
+  const preview = useMemo(
+    () =>
+      previewSaleTotals(
+        cart.map((l) => ({ quantity: l.quantity, unitPricePaise: l.unitPricePaise })),
+        fin,
+        orderDiscountPaise
+      ),
+    [cart, fin, orderDiscountPaise]
+  );
+  const { subtotal, total, tax: taxPaise, discount: discountPaise } = preview;
   const paidTaka = payments.reduce((s, p) => s + (p.amountTaka || 0), 0);
   const paidPaise = toPaise(paidTaka);
   const duePaise = Math.max(0, total - paidPaise);
+  // Change is only possible for walk-in (no customer): a customer's due can
+  // never go negative, so overpaying with a customer selected is blocked.
   const changePaise = customerId ? 0 : Math.max(0, paidPaise - total);
 
   async function onSearchEnter() {
@@ -184,7 +268,7 @@ export function Pos() {
     setPayments((ps) => ps.filter((p) => p.method !== method));
   }
 
-  async function completeSale() {
+  async function completeSale(overrideCreditLimit = false, key: string = idemKey()) {
     if (cart.length === 0) return;
     setBusy(true);
     try {
@@ -195,19 +279,39 @@ export function Pos() {
           unitPricePaise: l.unitPricePaise,
           discountPaise: 0
         })),
-        payments: payments.filter((p) => p.amountTaka > 0).map((p) => ({ method: p.method, amountPaise: toPaise(p.amountTaka) })),
+        payments: payments.filter((p) => p.amountTaka > 0).map((p) => ({
+          method: p.method,
+          amountPaise: toPaise(p.amountTaka),
+          reference: p.reference,
+          chequeNo: p.chequeNo
+        })),
         customerId: customerId || null,
-        discountPaise,
-        idempotencyKey: idemKey()
+        orderDiscountPaise,
+        overrideCreditLimit,
+        idempotencyKey: key
       });
       setCart([]);
       setPayments([]);
       setDiscountTaka(0);
-      setCustomerId('');
+      if (customerMode !== 'last_used') setCustomerId('');
       setReceipt(res);
       reloadProducts();
-      toast('success', 'বিক্রয় সম্পন্ন', `রফারেন্স: ${res.referenceNo}`);
+      toast('success', 'বিক্রয় সম্পন্ন', `রেফারেন্স: ${res.referenceNo}`);
+      maybeAutoPrint(res);
     } catch (e) {
+      // Credit-limit breach: offer the explicit override (§112) instead of
+      // failing silently — but only if this user actually holds the
+      // sales.creditOverride permission.
+      const code = (e as { code?: string })?.code;
+      if (code === 'CREDIT_LIMIT' && !overrideCreditLimit && can('sales.creditOverride')) {
+        const msg = (e as Error)?.message ?? '';
+        if (window.confirm(`${msg}\n\nবিশেষ অনুমতি নিয়ে বিক্রয় চালিয়ে যাবেন?`)) {
+          // Reuse the SAME idempotency key: the first attempt failed, so the
+          // retry is the same logical submission and must not mint a new key.
+          void completeSale(true, key).catch(() => {});
+          return;
+        }
+      }
       toast('error', 'বিক্রয় সম্পন্ন হয়নি', errMsg(e));
     } finally {
       setBusy(false);
@@ -378,7 +482,7 @@ export function Pos() {
           </div>
 
           <div className="pay-methods">
-            {PAYMENT_METHODS.filter((m) => m.key !== 'cheque').map((m) => {
+            {PAYMENT_METHODS.map((m) => {
               const amt = payments.find((p) => p.method === m.key)?.amountTaka ?? 0;
               return (
                 <button
@@ -428,10 +532,35 @@ export function Pos() {
               যোগ
             </Button>
           </div>
+          {(activePay === 'cheque' || activePay === 'bank' || activePay === 'other') && (
+            <div style={{ padding: '6px 14px 0', display: 'flex', gap: 8 }}>
+              <input
+                className="input"
+                style={{ height: 30, fontSize: 'var(--fs-sm)', flex: 1 }}
+                placeholder={activePay === 'cheque' ? 'চেক নম্বর (ঐচ্ছিক)' : 'রেফারেন্স (ঐচ্ছিক)'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const existing = payments.find((p) => p.method === activePay);
+                    if (existing) {
+                      const val = (e.currentTarget as HTMLInputElement).value.trim();
+                      setPayments((ps) =>
+                        ps.map((p) =>
+                          p.method === activePay
+                            ? { ...p, ...(activePay === 'cheque' ? { chequeNo: val } : { reference: val }) }
+                            : p
+                        )
+                      );
+                      (e.currentTarget as HTMLInputElement).value = '';
+                    }
+                  }
+                }}
+              />
+            </div>
+          )}
 
           <div className="totals">
             <div className="row">
-              <span>সাবটোটাল</span>
+              <span>আংশিক মোট</span>
               <Money paise={subtotal} />
             </div>
             {discountAllowed && (
@@ -448,6 +577,18 @@ export function Pos() {
                     setDiscountTaka(Number.isFinite(v) ? Math.max(0, v) : 0);
                   }}
                 />
+              </div>
+            )}
+            {discountPaise > 0 && (
+              <div className="row">
+                <span>মোট ছাড়</span>
+                <Money paise={-discountPaise} />
+              </div>
+            )}
+            {taxPaise > 0 && (
+              <div className="row">
+                <span>কর</span>
+                <Money paise={taxPaise} />
               </div>
             )}
             <div className="row">
@@ -480,7 +621,7 @@ export function Pos() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <User size={15} style={{ color: 'var(--c-ink-3)' }} />
               <SelectInput value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={{ height: 32, fontSize: 'var(--fs-sm)' }}>
-                <option value="">সামান কাস্টমার (নগদ)</option>
+                <option value="">সাধারণ কাস্টমার (নগদ)</option>
                 {(customers ?? []).map((c) => (
                   <option key={String(c.id)} value={String(c.id)}>
                     {String(c.name)}
@@ -491,7 +632,7 @@ export function Pos() {
             </div>
             {cust && custDue > 0 && (
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'var(--c-warn-soft)', color: 'var(--c-warn)', borderRadius: 8, padding: '6px 10px', fontSize: 'var(--fs-xs)', fontWeight: 600, marginBottom: 8 }}>
-                <AlertTriangle size={13} /> পূর্বের বকেয়া: ৳{(custDue / 100).toLocaleString('en-IN')}
+                <AlertTriangle size={13} /> বর্তমান বকেয়া: ৳{(custDue / 100).toLocaleString('en-IN')}
               </div>
             )}
           </div>
@@ -502,7 +643,13 @@ export function Pos() {
               size="lg"
               icon={<Banknote size={17} />}
               loading={busy}
-              disabled={cart.length === 0 || (duePaise > 0 && !customerId) || (paidPaise > total + 0.5 && !customerId)}
+              disabled={
+                cart.length === 0 ||
+                (duePaise > 0 && !customerId) ||
+                // walk-in may overpay (change comes back in cash); a
+                // customer's due can never go negative
+                (paidPaise > total + 0.5 && !!customerId)
+              }
               onClick={() => void completeSale()}
             >
               বিক্রয় সম্পন্ন (Enter)
@@ -671,7 +818,7 @@ export function UnknownBarcodeModal({
           <TextInput placeholder="পণ্যের নাম *" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="field">
-              <label>ভেদাম (৳) *</label>
+              <label>বিক্রয় মূল্য (৳) *</label>
               <input className="input input-money" inputMode="decimal" value={priceTaka || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); setPriceTaka(Number.isFinite(v) ? v : 0); }} />
             </div>
             <div className="field">
@@ -720,7 +867,7 @@ export function ReceiptPreviewModal({
             onClick={async () => {
               if (!html) return;
               try {
-                const path = await api.print.savePdf({ html, defaultFileName: `${sale.referenceNo}.pdf` });
+                const path = await api.print.savePdf(token, { html, defaultFileName: `${sale.referenceNo}.pdf`, paper: '80mm' });
                 if (path) toast('success', 'PDF সংরক্ষিত', path);
               } catch (e) {
                 toast('error', 'PDF তৈরি হয়নি', errMsg(e));
@@ -744,7 +891,7 @@ export function ReceiptPreviewModal({
       )}
       <div style={{ marginTop: 10, fontSize: 'var(--fs-sm)', color: 'var(--c-ink-2)', display: 'flex', justifyContent: 'space-between' }}>
         <span>
-          রফারেন্স: <strong>{sale.referenceNo}</strong> — ৳{(sale.totalPaise / 100).toLocaleString('en-IN')}
+          রেফারেন্স: <strong>{sale.referenceNo}</strong> — ৳{(sale.totalPaise / 100).toLocaleString('en-IN')}
         </span>
         {sale.changePaise > 0 && <span>ফেরত: ৳{(sale.changePaise / 100).toLocaleString('en-IN')}</span>}
         {sale.duePaise > 0 && <span style={{ color: 'var(--c-danger)' }}>বকেয়া: ৳{(sale.duePaise / 100).toLocaleString('en-IN')}</span>}

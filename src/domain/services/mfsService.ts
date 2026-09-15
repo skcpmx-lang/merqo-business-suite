@@ -68,32 +68,37 @@ export function setupWallet(
 ): void {
   const provider = getProvider(db, input.businessId, input.providerId);
   if (!provider.wallet_id) throw invalidStateNoWallet(provider.name);
-  if (input.openingBalancePaise !== undefined) {
-    const current = provider.wallet_balance_paise ?? 0;
-    const delta = input.openingBalancePaise - current;
-    if (delta !== 0) {
-      db.prepare('UPDATE mfs_wallets SET opening_balance_paise = opening_balance_paise + ? WHERE id = ?')
-        .run(delta, provider.wallet_id);
-      db.prepare(
-        `INSERT INTO mfs_transactions
-         (id, business_id, reference_no, provider_id, wallet_id, transaction_type, amount_paise,
-          commission_paise, note, operator, status, user_id, created_at)
-         VALUES (?, ?, ?, ?, ?, 'other', 0, 0, 'প্রারম্ভিক ব্যালেন্স সমন্বয়', '', 'completed', ?, ?)`
-      ).run(
-        generateId(), input.businessId, `MFS-OPEN-${generateId().slice(0, 8)}`,
-        provider.id, provider.wallet_id, input.userId, Date.now()
-      );
-      db.prepare('UPDATE mfs_wallets SET balance_paise = ? WHERE id = ?')
-        .run(input.openingBalancePaise, provider.wallet_id);
+
+  // Atomic: the wallet opening-balance adjustment + audit row commit
+  // together or not at all.
+  tx(db, () => {
+    if (input.openingBalancePaise !== undefined) {
+      const current = provider.wallet_balance_paise ?? 0;
+      const delta = input.openingBalancePaise - current;
+      if (delta !== 0) {
+        db.prepare('UPDATE mfs_wallets SET opening_balance_paise = opening_balance_paise + ? WHERE id = ?')
+          .run(delta, provider.wallet_id);
+        db.prepare(
+          `INSERT INTO mfs_transactions
+           (id, business_id, reference_no, provider_id, wallet_id, transaction_type, amount_paise,
+            commission_paise, note, operator, status, user_id, created_at)
+           VALUES (?, ?, ?, ?, ?, 'other', 0, 0, 'প্রাথমিক ব্যালেন্স সমন্বয়', '', 'completed', ?, ?)`
+        ).run(
+          generateId(), input.businessId, `MFS-OPEN-${generateId().slice(0, 8)}`,
+          provider.id, provider.wallet_id, input.userId, Date.now()
+        );
+        db.prepare('UPDATE mfs_wallets SET balance_paise = ? WHERE id = ?')
+          .run(input.openingBalancePaise, provider.wallet_id);
+      }
     }
-  }
-  if (input.accountNo !== undefined) {
-    db.prepare('UPDATE mfs_wallets SET account_no = ? WHERE id = ?').run(input.accountNo, provider.wallet_id);
-  }
-  recordAudit(db, {
-    businessId: input.businessId, userId: input.userId, action: 'mfs.wallet_setup',
-    entityType: 'mfs_provider', entityId: provider.id,
-    after: { accountNo: input.accountNo ?? null, openingBalance: input.openingBalancePaise ?? null }
+    if (input.accountNo !== undefined) {
+      db.prepare('UPDATE mfs_wallets SET account_no = ? WHERE id = ?').run(input.accountNo, provider.wallet_id);
+    }
+    recordAudit(db, {
+      businessId: input.businessId, userId: input.userId, action: 'mfs.wallet_setup',
+      entityType: 'mfs_provider', entityId: provider.id,
+      after: { accountNo: input.accountNo ?? null, openingBalance: input.openingBalancePaise ?? null }
+    });
   });
 }
 

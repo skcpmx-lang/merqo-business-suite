@@ -83,7 +83,7 @@ describe('purchase → stock → supplier payable → payment (integration)', ()
 
   it('purchase return: stock out, payable reduced, stock value updated', () => {
     const supplier = env.db.prepare('SELECT id FROM suppliers ORDER BY created_at ASC LIMIT 1').get() as { id: string };
-    const purchase = getPurchase(env.db, 'PUR-000001')!;
+    const purchase = getPurchase(env.db, env.businessId, 'PUR-000001')!;
     const item = purchase.items[0];
 
     const res = createPurchaseReturn(env.db, {
@@ -101,7 +101,7 @@ describe('purchase → stock → supplier payable → payment (integration)', ()
 
   it('supplier ledger shows the full chronology', () => {
     const supplier = env.db.prepare('SELECT id FROM suppliers ORDER BY created_at ASC LIMIT 1').get() as { id: string };
-    const ledger = supplierLedger(env.db, supplier.id);
+    const ledger = supplierLedger(env.db, env.businessId, supplier.id);
     const types = ledger.map((l) => l.transaction_type);
     expect(types).toContain('purchase');
     expect(types).toContain('payment');
@@ -123,7 +123,7 @@ describe('sales return → stock restoration → financial reversal (integration
     const cashAcc = listAccounts(env.db, env.businessId).find((a) => a.name === 'নগদ')!;
     const cashBeforeReturn = (cashAcc as unknown as { balance_paise: number }).balance_paise;
 
-    const saleDetail = getSale(env.db, sale.saleId)!;
+    const saleDetail = getSale(env.db, env.businessId, sale.saleId)!;
     const item = saleDetail.items[0];
 
     const res = createSalesReturn(env.db, {
@@ -137,7 +137,7 @@ describe('sales return → stock restoration → financial reversal (integration
     expect(getStock(env.db, env.businessId, product).quantity).toBe(stockAfterSale + 2);
     const cashAfterReturn = (listAccounts(env.db, env.businessId).find((a) => a.name === 'নগদ')! as unknown as { balance_paise: number }).balance_paise;
     expect(cashAfterReturn).toBe(cashBeforeReturn - 10000);
-    const status = getSale(env.db, sale.saleId)!.status;
+    const status = getSale(env.db, env.businessId, sale.saleId)!.status;
     expect(status).toBe('partially_refunded');
   });
 
@@ -149,7 +149,7 @@ describe('sales return → stock restoration → financial reversal (integration
       lines: [{ productId: product, quantity: 2 }],
       payments: [{ method: 'cash', amountPaise: 140000 }]
     });
-    const saleDetail = getSale(env.db, sale.saleId)!;
+    const saleDetail = getSale(env.db, env.businessId, sale.saleId)!;
     expect(() =>
       createSalesReturn(env.db, {
         businessId: env.businessId,
@@ -186,7 +186,7 @@ describe('inventory valuation (weighted average, §28)', () => {
       lines: [{ productId: product, quantity: 20, unitPricePaise: 16000 }],
       payments: [{ method: 'cash', amountPaise: 320000 }]
     });
-    const detail = getSale(env.db, sale.saleId)!;
+    const detail = getSale(env.db, env.businessId, sale.saleId)!;
     expect(detail.cogs_paise).toBe(300000);
     expect(detail.total_paise - detail.cogs_paise).toBe(20000); // gross profit ৳200
 

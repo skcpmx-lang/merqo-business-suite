@@ -6,6 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   IPC,
+  MAIN_EVENTS,
   type MerqoApi,
   type IpcError,
   type Range,
@@ -235,7 +236,15 @@ const api: MerqoApi = {
   print: {
     receiptHtml: (token, saleId, paper) => call(IPC.PRINT_RECEIPT_HTML, token, saleId, paper ?? '80mm'),
     invoiceHtml: (token, saleId) => call(IPC.PRINT_INVOICE_HTML, token, saleId),
-    savePdf: (req) => call(IPC.PRINT_PDF, req)
+    savePdf: (token, req) => call(IPC.PRINT_PDF, token, req),
+    toPrinter: (token, req) => call(IPC.PRINT_TO_PRINTER, token, req)
+  },
+  system: {
+    onMenuBackup: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on(MAIN_EVENTS.MENU_BACKUP, listener);
+      return () => ipcRenderer.removeListener(MAIN_EVENTS.MENU_BACKUP, listener);
+    }
   }
 };
 

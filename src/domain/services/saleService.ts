@@ -15,7 +15,7 @@ import type { DB } from '../db/connection';
 import { tx } from '../db/connection';
 import { generateId } from '../../shared/ids';
 import { roundToPaise, fromPaise, type Paise } from '../../shared/money';
-import { percentPaise } from '../../shared/money';
+import { prorateOrderDiscount, taxForBase } from '../../shared/saleMath';
 import { recordAudit } from './auditService';
 import { getFinancialSettings } from '../repos/settings';
 import { allocateReference } from '../repos/sequences';
@@ -51,6 +51,8 @@ export interface CreateSaleInput {
   payments: SalePaymentInput[];
   note?: string;
   at?: number;
+  /** order-level discount in paise (applied after line discounts, prorated for tax) */
+  orderDiscountPaise?: Paise;
   /** permission-derived flags */
   allowBelowMinPrice?: boolean;
   allowDiscount?: boolean;
@@ -99,9 +101,12 @@ interface ComputedLine {
   unitPricePaise: Paise;
   grossPaise: Paise;
   discountPaise: Paise;
+  /** this line's share of the order-level discount */
+  orderDiscountPaise: Paise;
   taxPaise: Paise;
   netPaise: Paise;
   restockable: boolean;
+  cogsPaise: Paise;
 }
 
 function computeLines(db: DB, input: CreateSaleInput, fin: ReturnType<typeof getFinancialSettings>): ComputedLine[] {
@@ -123,21 +128,13 @@ function computeLines(db: DB, input: CreateSaleInput, fin: ReturnType<typeof get
     if (unitPrice < 0) throw new ValidationError('দাম ঋণাত্মক হতে পারে না।');
 
     let discount = li.discountPaise ?? 0;
-    if (discount < 0) throw new ValidationError('ডিসকাউন্ট ঋণাত্মক হতে পারে না।');
+    if (discount < 0) throw new ValidationError('ছাড় ঋণাত্মক হতে পারে না।');
     if (discount > 0 && !input.allowDiscount) {
-      throw new ValidationError('ডিসকাউন্ট দেওয়ার অনুমতি নেই।');
+      throw new ValidationError('ছাড় দেওয়ার অনুমতি নেই।');
     }
 
     const gross = roundToPaise(fromPaise(unitPrice) * qty);
-    if (discount > gross) throw new ValidationError(`“${product.name}”-এর ডিসকাউন্ট লাইন মূল্যের বেশি হতে পারে না।`);
-
-    let tax: Paise = 0;
-    if (fin.tax_enabled && fin.tax_rate_bps > 0) {
-      const base = gross - discount;
-      tax = fin.tax_inclusive_prices
-        ? roundToPaise((base * fin.tax_rate_bps) / (10000 + fin.tax_rate_bps))
-        : percentPaise(base, fin.tax_rate_bps);
-    }
+    if (discount > gross) throw new ValidationError(`“${product.name}”-এর ছাড় লাইন মূল্যের বেশি হতে পারে না।`);
 
     const existing = seen.get(li.productId);
     const line: ComputedLine = existing
@@ -145,7 +142,8 @@ function computeLines(db: DB, input: CreateSaleInput, fin: ReturnType<typeof get
       : {
           input: li, productName: product.name, unitId: product.unit_id, sku: product.sku,
           barcode: product.primary_barcode ?? '', qty: 0, unitPricePaise: unitPrice,
-          grossPaise: 0, discountPaise: 0, taxPaise: 0, netPaise: 0, restockable: true
+          grossPaise: 0, discountPaise: 0, orderDiscountPaise: 0, taxPaise: 0,
+          netPaise: 0, restockable: true, cogsPaise: 0
         };
     if (existing) {
       // same product twice — require identical price to keep the line sane
@@ -163,23 +161,30 @@ function computeLines(db: DB, input: CreateSaleInput, fin: ReturnType<typeof get
       lines.push(line);
     }
   }
-  for (const line of lines) {
-    let tax: Paise = 0;
-    const base = line.grossPaise - line.discountPaise;
-    if (fin.tax_enabled && fin.tax_rate_bps > 0) {
-      tax = fin.tax_inclusive_prices
-        ? roundToPaise((base * fin.tax_rate_bps) / (10000 + fin.tax_rate_bps))
-        : percentPaise(base, fin.tax_rate_bps);
-    }
-    line.taxPaise = tax;
-    line.netPaise = base + tax;
+  // Order-level discount: prorate across lines by pre-discount base so the
+  // parts sum exactly to the whole, then apply tax per line (shared math,
+  // identical to the POS preview).
+  const orderDiscount = Math.max(0, Math.floor(input.orderDiscountPaise ?? 0));
+  const bases = lines.map((l) => Math.max(0, l.grossPaise - l.discountPaise));
+  const totalBase = bases.reduce((s, b) => s + b, 0);
+  if (orderDiscount > totalBase) {
+    throw new ValidationError('সামগ্রিক ছাড় লাইন মূল্যের বেশি হতে পারে না।');
+  }
+  const alloc = prorateOrderDiscount(bases, orderDiscount);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    line.orderDiscountPaise = alloc[i];
+    const netBase = bases[i] - alloc[i];
+    line.taxPaise = taxForBase(netBase, fin);
+    line.netPaise = netBase + line.taxPaise;
   }
   return lines;
 }
 
 export function getSaleTotals(lines: ComputedLine[]) {
   const subtotal = lines.reduce((s, l) => s + l.grossPaise, 0);
-  const discount = lines.reduce((s, l) => s + l.discountPaise, 0);
+  // line discounts + prorated order discount
+  const discount = lines.reduce((s, l) => s + l.discountPaise + l.orderDiscountPaise, 0);
   const tax = lines.reduce((s, l) => s + l.taxPaise, 0);
   const total = subtotal - discount + tax;
   return { subtotal, discount, tax, total };
@@ -236,6 +241,7 @@ export function createSale(db: DB, input: CreateSaleInput): SaleResult {
   const at = input.at ?? Date.now();
   const saleId = generateId();
   let referenceNo = '';
+  let cogs = 0;
 
   tx(db, () => {
     const n = allocateReference(db, REF_PREFIX.sale);
@@ -255,8 +261,7 @@ export function createSale(db: DB, input: CreateSaleInput): SaleResult {
     );
 
     // Items + stock
-    let cogs = 0;
-    let allowNeg = input.allowNegativeStock && fin.allow_negative_stock;
+    const allowNeg = input.allowNegativeStock && fin.allow_negative_stock;
     for (const line of lines) {
       const product = getProduct(db, line.input.productId)!;
       const expiryCheck = checkExpiredBatches(db, line.input.productId, fin);
@@ -276,6 +281,7 @@ export function createSale(db: DB, input: CreateSaleInput): SaleResult {
       });
       consumeBatches(db, line.input.productId, line.qty, at);
       cogs += cogsPaise;
+      line.cogsPaise = cogsPaise;
       db.prepare(
         `INSERT INTO sale_items
          (id, business_id, sale_id, product_id, product_name_snapshot, sku_snapshot, barcode_snapshot,
@@ -366,17 +372,17 @@ export function createSale(db: DB, input: CreateSaleInput): SaleResult {
     paidPaise: pay.received < totals.total ? pay.received : totals.total,
     duePaise: pay.due,
     changePaise: pay.change,
-    cogsPaise: 0,
-    grossProfitPaise: 0,
+    cogsPaise: cogs,
+    grossProfitPaise: totals.total - cogs,
     lines: lines.map((l) => ({
       productId: l.input.productId,
       productName: l.productName,
       quantity: l.qty,
       unitPricePaise: l.unitPricePaise,
-      discountPaise: l.discountPaise,
+      discountPaise: l.discountPaise + l.orderDiscountPaise,
       taxPaise: l.taxPaise,
       lineTotalPaise: l.netPaise,
-      cogsPaise: 0
+      cogsPaise: l.cogsPaise
     })),
     status: pay.due > 0 ? 'partially_paid' : 'paid'
   };
@@ -385,7 +391,7 @@ export function createSale(db: DB, input: CreateSaleInput): SaleResult {
 function checkExpiredBatches(db: DB, productId: string, fin: ReturnType<typeof getFinancialSettings>) {
   const product = getProduct(db, productId);
   if (!product || !product.expiry_enabled) return { blocked: false };
-  const batches = listActiveBatches(db, productId);
+  const batches = listActiveBatches(db, product.business_id, productId);
   if (batches.length === 0) return { blocked: false };
   const now = Date.now();
   const hasValid = batches.some((b) => !b.expiry_date || b.expiry_date > now);
@@ -396,7 +402,7 @@ function checkExpiredBatches(db: DB, productId: string, fin: ReturnType<typeof g
 function consumeBatches(db: DB, productId: string, qty: number, at: number): void {
   const product = getProduct(db, productId);
   if (!product || !product.batch_enabled) return;
-  const batches = listActiveBatches(db, productId);
+  const batches = listActiveBatches(db, product.business_id, productId);
   if (batches.length === 0) return;
   let remaining = qty;
   for (const b of batches) {
@@ -504,7 +510,7 @@ export interface SalePaymentRecord {
   created_at: number;
 }
 
-export function getSale(db: DB, idOrRef: string): (SaleRecord & {
+export function getSale(db: DB, businessId: string, idOrRef: string): (SaleRecord & {
   items: SaleItemRecord[];
   payments: SalePaymentRecord[];
 }) | undefined {
@@ -514,9 +520,9 @@ export function getSale(db: DB, idOrRef: string): (SaleRecord & {
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
        LEFT JOIN users u ON u.id = s.user_id
-       WHERE s.id = ? OR s.reference_no = ?`
+       WHERE s.business_id = ? AND (s.id = ? OR s.reference_no = ?)`
     )
-    .get(idOrRef, idOrRef) as SaleRecord | undefined;
+    .get(businessId, idOrRef, idOrRef) as SaleRecord | undefined;
   if (!sale) return undefined;
   const items = db
     .prepare('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY rowid')
@@ -651,7 +657,7 @@ function consumeBatchesReverse(db: DB, productId: string, qty: number): void {
   if (!product || !product.batch_enabled) return;
   // On void, restore to the batch consumed most recently is not tracked per sale;
   // restore to the oldest active batch (documented approximation).
-  const batches = listActiveBatches(db, productId);
+  const batches = listActiveBatches(db, product.business_id, productId);
   if (batches.length === 0) return;
   const first = batches[0];
   adjustBatchQuantity(db, first.id, qty);
@@ -699,8 +705,10 @@ export function listHeldCarts(db: DB, businessId: string, userId?: string): Held
   );
 }
 
-export function resumeHeldSale(db: DB, id: string): HeldCart | null {
-  const row = db.prepare("SELECT * FROM held_carts WHERE id = ? AND status = 'held'").get(id) as
+export function resumeHeldSale(db: DB, businessId: string, id: string): HeldCart | null {
+  const row = db
+    .prepare("SELECT * FROM held_carts WHERE id = ? AND business_id = ? AND status = 'held'")
+    .get(id, businessId) as
     | { id: string; label: string; items_json: string; customer_id: string | null; created_at: number }
     | undefined;
   if (!row) return null;
@@ -714,8 +722,8 @@ export function resumeHeldSale(db: DB, id: string): HeldCart | null {
   };
 }
 
-export function cancelHeldSale(db: DB, id: string): void {
-  db.prepare("UPDATE held_carts SET status = 'cancelled' WHERE id = ?").run(id);
+export function cancelHeldSale(db: DB, businessId: string, id: string): void {
+  db.prepare("UPDATE held_carts SET status = 'cancelled' WHERE id = ? AND business_id = ?").run(id, businessId);
 }
 
 export { findProductByBarcode };

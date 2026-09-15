@@ -43,7 +43,28 @@ export interface DashboardData {
   categoryMix: { category: string; revenue: number }[];
 }
 
-export function getDashboard(db: DB, businessId: string, preset: string, now = Date.now()): DashboardData {
+/**
+ * Permission scope for the dashboard rollup — the IPC layer derives these
+ * from the resolved session role; the domain never trusts the client.
+ * Profit/COGS, cost-value, account-balance and MFS figures are only
+ * computed (and returned) when the corresponding permission is present.
+ */
+export interface DashboardAccess {
+  profit: boolean; // profit.view — profit KPI, profit trend, P&L
+  stockCost: boolean; // stock.viewCost — stock value at cost
+  accounts: boolean; // accounts.view — cash/bank balances, cash flow
+  mfs: boolean; // mfs.view — MFS wallet balances + summary
+}
+
+export const fullDashboardAccess: DashboardAccess = { profit: true, stockCost: true, accounts: true, mfs: true };
+
+export function getDashboard(
+  db: DB,
+  businessId: string,
+  preset: string,
+  now = Date.now(),
+  access: DashboardAccess = fullDashboardAccess
+): DashboardData {
   const reports = createReports(db);
   const range = resolveRange(preset as never, now);
   // previous period of equal length
@@ -52,15 +73,18 @@ export function getDashboard(db: DB, businessId: string, preset: string, now = D
 
   const s = reports.salesSummary(businessId, range);
   const ps = reports.salesSummary(businessId, prevRange);
-  const p = reports.profitAndLoss(businessId, range);
-  const pp = reports.profitAndLoss(businessId, prevRange);
-  const stock = reports.stockSummary(businessId);
-  const accounts = reports.accountBalanceSheet(businessId);
+  const p = access.profit ? reports.profitAndLoss(businessId, range) : null;
+  const pp = access.profit ? reports.profitAndLoss(businessId, prevRange) : null;
+  const stock = access.stockCost ? reports.stockSummary(businessId) : null;
+  const accounts = access.accounts ? reports.accountBalanceSheet(businessId) : [];
   const rp = reports.receivablePayable(businessId);
 
-  const cashBalance = accounts.find((a) => a.kind === 'cash')?.balance_paise ?? 0;
-  const bankBalance = accounts.find((a) => a.kind === 'bank')?.balance_paise ?? 0;
-  const mfsBalance = accounts.filter((a) => a.kind === 'mfs').reduce((sum, a) => sum + a.balance_paise, 0);
+  const cashBalance = access.accounts ? (accounts.find((a) => a.kind === 'cash')?.balance_paise ?? 0) : 0;
+  const bankBalance = access.accounts ? (accounts.find((a) => a.kind === 'bank')?.balance_paise ?? 0) : 0;
+  const mfsBalance =
+    access.mfs && access.accounts
+      ? accounts.filter((a) => a.kind === 'mfs').reduce((sum, a) => sum + a.balance_paise, 0)
+      : 0;
 
   // Today KPIs (independent of the selected range)
   const today = resolveRange('today', now);
@@ -70,17 +94,19 @@ export function getDashboard(db: DB, businessId: string, preset: string, now = D
   const tCollections = reports
     .collectionsByDay(businessId, today)
     .reduce((sum, c) => sum + c.total, 0);
-  const tProfit = reports.profitAndLoss(businessId, today);
+  const tProfit = access.profit ? reports.profitAndLoss(businessId, today) : null;
 
   // Trends
   const salesRows = reports.salesByDay(businessId, range, 'day');
   const salesTrend = reports.fillDayBuckets(salesRows.map((x) => ({ day: x.bucket, total: x.total })), range);
   const salesByDayMap = new Map(salesRows.map((x) => [x.bucket, x]));
-  const profitTrend = salesTrend.map((d) => {
-    const row = salesByDayMap.get(d.day);
-    const gross = (row?.total ?? 0) - (row?.cogs ?? 0);
-    return { ...d, gross, net: gross };
-  });
+  const profitTrend = access.profit
+    ? salesTrend.map((d) => {
+        const row = salesByDayMap.get(d.day);
+        const gross = (row?.total ?? 0) - (row?.cogs ?? 0);
+        return { ...d, gross, net: gross };
+      })
+    : [];
   const purchaseTrend = reports.fillDayBuckets(
     reports.all(
       `SELECT strftime('%Y-%m-%d', datetime(date/1000, 'unixepoch')) AS day,
@@ -121,32 +147,34 @@ export function getDashboard(db: DB, businessId: string, preset: string, now = D
     kpis: {
       todaySales: tSales.net_sales,
       todayPurchases: tPurchases.total,
-      todayProfit: tProfit.netProfit,
+      todayProfit: tProfit?.netProfit ?? 0,
       todayExpenses: tExpenses,
       todayCollections: tCollections,
       customerDue: rp.receivable,
       supplierPayable: rp.payable,
-      stockValue: stock.stock_value ?? 0,
+      stockValue: stock?.stock_value ?? 0,
       cashBalance,
       bankBalance,
       mfsBalance
     },
     kpiDeltas: {
       sales: s.net_sales - ps.net_sales,
-      profit: p.netProfit - pp.netProfit
+      profit: p && pp ? p.netProfit - pp.netProfit : 0
     },
     salesTrend,
     profitTrend,
     purchaseTrend,
     expenseTrend,
     paymentMix: reports.salesByPaymentMethod(businessId, range) as { method: string; total: number }[],
-    topProducts: reports.salesByProduct(businessId, range, 8) as { id: string; name: string; qty: number; revenue: number; profit: number }[],
+    topProducts: (reports.salesByProduct(businessId, range, 8) as { id: string; name: string; qty: number; revenue: number; profit: number }[]).map(
+      (tp) => (access.profit ? tp : { ...tp, profit: 0 })
+    ),
     lowStock: low,
     outOfStock: oos,
     topCustomerDues: reports.topCustomerDues(businessId, 8),
     topSupplierPayables: reports.topSupplierPayables(businessId, 8),
-    cashFlow: reports.cashFlowByDay(businessId, range),
-    mfsSummary: mfsSummary(db, businessId, range.from, range.to),
+    cashFlow: access.accounts ? reports.cashFlowByDay(businessId, range) : [],
+    mfsSummary: access.mfs ? mfsSummary(db, businessId, range.from, range.to) : [],
     categoryMix: reports.salesByCategory(businessId, range) as { category: string; revenue: number }[]
   };
 }

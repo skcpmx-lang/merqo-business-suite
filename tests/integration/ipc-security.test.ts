@@ -13,9 +13,15 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { makeEnv, makeProduct, type TestEnv } from '../helpers';
 import { dispatchIpc, type IpcResult } from '../../src/main/ipc/handlers';
 import { IPC, type IpcError } from '../../src/shared/ipc';
-import { createUser, login } from '../../src/domain/services/userService';
+import { createUser, login, getRolePermissions } from '../../src/domain/services/userService';
 import { createProduct } from '../../src/domain/services/productService';
 import { querySales } from '../../src/domain/services/saleService';
+import { createCustomer } from '../../src/domain/services/customerService';
+import { createReports } from '../../src/domain/services/reportService';
+import { resolveRange } from '../../src/shared/dates';
+import { tmpdir } from 'node:os';
+import { mkdtempSync, rmSync } from 'node:fs';
+import path from 'node:path';
 
 let env: TestEnv;
 let adminToken: string;
@@ -170,5 +176,158 @@ describe('double submission (idempotency at the IPC boundary)', () => {
     const r2 = dispatchIpc(env.db, IPC.SALES_CREATE, adminToken, payload);
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);
+  });
+});
+
+describe('phase-16: full permission matrix at the IPC boundary', () => {
+  it('dashboard masks profit/cost/balance fields per session permission', () => {
+    const p = makeProduct(env, { name: 'লাভ পণ্য', sku: 'PROF-1', cost: 3000, price: 5000, stock: 10 });
+    const sale = dispatchIpc(env.db, IPC.SALES_CREATE, adminToken, {
+      lines: [{ productId: p, quantity: 1 }],
+      payments: [{ method: 'cash', amountPaise: 5000 }],
+      idempotencyKey: 'phase16-profit'
+    });
+    expect(sale.ok).toBe(true);
+
+    type Dash = {
+      kpis: { todayProfit: number; cashBalance: number; stockValue: number };
+      profitTrend: unknown[];
+      topProducts: { profit: number }[];
+    };
+    const mgr = dispatchIpc(env.db, IPC.DASHBOARD_GET, managerToken, 'today');
+    expect(mgr.ok).toBe(true);
+    if (!mgr.ok) throw new Error('manager dashboard should pass');
+    const m = mgr.data as Dash;
+    // Manager sees the domain's own P&L figure (sign depends on earlier
+    // test sales, so compare against the report, not against zero)
+    const expected = createReports(env.db).profitAndLoss(env.businessId, resolveRange('today', Date.now())).netProfit;
+    expect(expected).not.toBe(0); // sanity: masking is only meaningful vs non-zero
+    expect(m.kpis.todayProfit).toBe(expected);
+    expect(m.kpis.cashBalance).toBeGreaterThan(0);
+    expect(m.kpis.stockValue).toBeGreaterThan(0);
+    expect(m.profitTrend.length).toBeGreaterThan(0);
+
+    const cash = dispatchIpc(env.db, IPC.DASHBOARD_GET, cashierToken, 'today');
+    expect(cash.ok).toBe(true);
+    if (!cash.ok) throw new Error('cashier dashboard should pass');
+    const c = cash.data as Dash;
+    // cashier: no profit.view / accounts.view / stock.viewCost → masked
+    expect(c.kpis.todayProfit).toBe(0);
+    expect(c.kpis.cashBalance).toBe(0);
+    expect(c.kpis.stockValue).toBe(0);
+    expect(c.profitTrend).toHaveLength(0);
+    for (const tp of c.topProducts) expect(tp.profit).toBe(0);
+  });
+
+  it('sale flags (discount / price-override) are derived from the role, not the client', () => {
+    const roles = env.db
+      .prepare('SELECT id FROM roles WHERE business_id = ? AND key = ?')
+      .all(env.businessId, 'cashier') as { id: string }[];
+    const cashierRoleId = roles[0].id;
+    const current = getRolePermissions(env.db, env.businessId, cashierRoleId);
+    try {
+      const narrowed = current.filter((p) => p !== 'sales.discount' && p !== 'sales.priceOverride');
+      const set = dispatchIpc(env.db, IPC.ROLES_SET_PERMISSIONS, adminToken, cashierRoleId, narrowed);
+      expect(set.ok).toBe(true);
+
+      const p = makeProduct(env, { name: 'ফ্ল্যাগ পণ্য', sku: 'FLAG-1', price: 5000, minPrice: 4000, stock: 10 });
+      // Client "requests" a discount — server must still strip the flag
+      const r1 = dispatchIpc(env.db, IPC.SALES_CREATE, cashierToken, {
+        lines: [{ productId: p, quantity: 1, discountPaise: 500 }],
+        payments: [{ method: 'cash', amountPaise: 4500 }],
+        idempotencyKey: 'phase16-disc'
+      });
+      expect(r1.ok).toBe(false);
+      if (!r1.ok) {
+        expect(r1.error.code).toBe('VALIDATION');
+        expect(r1.error.message).toContain('ছাড়');
+      }
+      // Client "requests" a below-minimum price — server must still strip the flag
+      const r2 = dispatchIpc(env.db, IPC.SALES_CREATE, cashierToken, {
+        lines: [{ productId: p, quantity: 1, unitPricePaise: 3000 }],
+        payments: [{ method: 'cash', amountPaise: 3000 }],
+        idempotencyKey: 'phase16-price'
+      });
+      expect(r2.ok).toBe(false);
+      if (!r2.ok) expect(r2.error.code).toBe('VALIDATION');
+    } finally {
+      const restore = dispatchIpc(env.db, IPC.ROLES_SET_PERMISSIONS, adminToken, cashierRoleId, current);
+      expect(restore.ok).toBe(true);
+    }
+  });
+
+  it('credit-limit override is stripped for a role without sales.creditOverride', () => {
+    const custId = createCustomer(env.db, {
+      businessId: env.businessId, userId: env.adminUserId,
+      name: 'ক্রেডিট কাস্টমার', phone: '01700000111', creditLimitPaise: 3000
+    });
+    const p = makeProduct(env, { name: 'ক্রেডিট পণ্য', sku: 'CRD-1', price: 5000, stock: 10 });
+    // cashier role has no sales.creditOverride → the client flag must be ignored
+    const r = dispatchIpc(env.db, IPC.SALES_CREATE, cashierToken, {
+      lines: [{ productId: p, quantity: 1 }],
+      payments: [{ method: 'cash', amountPaise: 1000 }],
+      customerId: custId,
+      overrideCreditLimit: true,
+      idempotencyKey: 'phase16-credit'
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('CREDIT_LIMIT');
+  });
+
+  it('cost-based dead-stock report requires stock.viewCost', () => {
+    createUser(env.db, {
+      businessId: env.businessId, name: 'অ্যাকাউন্ট্যান্ট টেস্ট', username: 'acc1',
+      password: 'acc12345', roleKey: 'accountant', userId: env.adminUserId
+    });
+    const accToken = login(env.db, env.businessId, 'acc1', 'acc12345').token;
+    // accountant has reports.view but NOT stock.viewCost
+    expect(err(dispatchIpc(env.db, IPC.REPORT_DEAD_STOCK, accToken)).code).toBe('PERMISSION_DENIED');
+    // manager has stock.viewCost → passes (empty list is fine)
+    const ok = dispatchIpc(env.db, IPC.REPORT_DEAD_STOCK, managerToken);
+    expect(ok.ok).toBe(true);
+  });
+
+  it('audit / settings / stock-adjust gates per role', () => {
+    // 'acc1' was created in the dead-stock test above (file runs sequentially)
+    const accToken = login(env.db, env.businessId, 'acc1', 'acc12345').token;
+    // audit: accountant denied, manager allowed
+    expect(err(dispatchIpc(env.db, IPC.AUDIT_QUERY, accToken, {})).code).toBe('PERMISSION_DENIED');
+    expect(dispatchIpc(env.db, IPC.AUDIT_QUERY, managerToken, {}).ok).toBe(true);
+    // settings: cashier denied, manager allowed
+    expect(err(dispatchIpc(env.db, IPC.SETTINGS_SET, cashierToken, 'pos', 'default_paper', '80mm')).code).toBe('PERMISSION_DENIED');
+    const set = dispatchIpc(env.db, IPC.SETTINGS_SET, managerToken, 'pos', 'default_paper', '80mm');
+    expect(set.ok).toBe(true);
+    // stock adjust: cashier denied; inventory_manager passes the gate (domain answers)
+    expect(err(dispatchIpc(env.db, IPC.STOCK_ADJUST, cashierToken, { productId: 'nope', quantity: 1, reason: 'x' })).code).toBe('PERMISSION_DENIED');
+    createUser(env.db, {
+      businessId: env.businessId, name: 'ইনভ২', username: 'inv2',
+      password: 'inv23456', roleKey: 'inventory_manager', userId: env.adminUserId
+    });
+    const invToken = login(env.db, env.businessId, 'inv2', 'inv23456').token;
+    const adj = dispatchIpc(env.db, IPC.STOCK_ADJUST, invToken, { productId: 'nope', quantity: 1, reason: 'x' });
+    expect(adj.ok).toBe(false);
+    if (!adj.ok) expect(['NOT_FOUND', 'VALIDATION']).toContain(adj.error.code);
+  });
+
+  it('backup: manager can create but never restore; owner restores end-to-end', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'merqo-qa-'));
+    try {
+      expect(dispatchIpc(env.db, IPC.BACKUP_DIR_SET, adminToken, dir).ok).toBe(true);
+      // manager: backup.create yes, backup.restore no (excluded from the role)
+      expect(dispatchIpc(env.db, IPC.BACKUP_CREATE, managerToken).ok).toBe(true);
+      expect(err(dispatchIpc(env.db, IPC.BACKUP_RESTORE, managerToken, 'whatever')).code).toBe('PERMISSION_DENIED');
+      // cashier: neither
+      expect(err(dispatchIpc(env.db, IPC.BACKUP_CREATE, cashierToken)).code).toBe('PERMISSION_DENIED');
+      // owner: full flow
+      const created = dispatchIpc(env.db, IPC.BACKUP_CREATE, adminToken);
+      expect(created.ok).toBe(true);
+      if (!created.ok) throw new Error('backup create failed');
+      const backupId = (created.data as { id: string }).id;
+      const restored = dispatchIpc(env.db, IPC.BACKUP_RESTORE, adminToken, backupId);
+      expect(restored.ok).toBe(true);
+      if (restored.ok) expect((restored.data as { restartRequired: boolean }).restartRequired).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

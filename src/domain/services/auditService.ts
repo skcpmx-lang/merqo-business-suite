@@ -77,7 +77,8 @@ export function queryAudit(db: DB, q: AuditQuery) {
     .prepare(
       `SELECT a.*, u.name AS user_name
        FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
-       WHERE ${where.join(' AND ')}
+       -- 'a.' required: users also has a business_id column
+       WHERE ${where.map((w) => (w === 'business_id = ?' ? 'a.business_id = ?' : w)).join(' AND ')}
        ORDER BY a.created_at DESC, a.id DESC
        LIMIT ? OFFSET ?`
     )

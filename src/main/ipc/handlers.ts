@@ -276,7 +276,17 @@ export const HANDLERS: HandlerDef[] = [
   /* ---- dashboard / notifications ---- */
   {
     channel: IPC.DASHBOARD_GET, auth: true,
-    run: (user, args) => getDashboard(args[0] as DB, user.businessId, args[1] as string)
+    run: (user, args) => {
+      // Profit/cost/balance figures only reach sessions holding the matching
+      // permission — never trust the renderer for scope.
+      const can = (perm: string) => user.isOwner || user.permissions.includes(perm);
+      return getDashboard(args[0] as DB, user.businessId, args[1] as string, Date.now(), {
+        profit: can('profit.view'),
+        stockCost: can('stock.viewCost'),
+        accounts: can('accounts.view'),
+        mfs: can('mfs.view')
+      });
+    }
   },
   {
     channel: IPC.NOTIFICATIONS_LIST, auth: true, permission: 'notifications.view',
@@ -823,7 +833,8 @@ export const HANDLERS: HandlerDef[] = [
     run: (user, args) => createReports(args[0] as DB).topStockValue(user.businessId)
   },
   {
-    channel: IPC.REPORT_DEAD_STOCK, auth: true, permission: 'reports.view',
+    // Returns a cost-based value column → same cost-visibility gate as topStockValue.
+    channel: IPC.REPORT_DEAD_STOCK, auth: true, permission: 'stock.viewCost',
     run: (user, args) => createReports(args[0] as DB).deadStock(user.businessId)
   },
   {

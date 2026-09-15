@@ -100,6 +100,9 @@ export function Dashboard() {
 
   const k = data.kpis;
   const showProfit = can('profit.view');
+  const showAccounts = can('accounts.view');
+  const showMfs = can('mfs.view');
+  const showStockCost = can('stock.viewCost');
   const presetMeta = RANGE_PRESETS.find((p) => p.key === preset);
 
   return (
@@ -149,32 +152,42 @@ export function Dashboard() {
         />
       </div>
 
+      {(showAccounts || showMfs || showStockCost) && (
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 16 }}>
+        {showAccounts && (
         <StatCard
           label="নগদ"
           icon={<Wallet size={15} />}
           value={<Money paise={k.cashBalance} />}
           sub="ক্যাশ হিসাব"
         />
+        )}
+        {showAccounts && (
         <StatCard
           label="ব্যাংক"
           icon={<Landmark size={15} />}
           value={<Money paise={k.bankBalance} />}
           sub="ব্যাংক হিসাব"
         />
+        )}
+        {showMfs && (
         <StatCard
           label="MFS (bKash/Nagad/…)"
           icon={<Smartphone size={15} />}
           value={<Money paise={k.mfsBalance} />}
           sub="MFS হিসাবগুলো মিলিয়ে"
         />
+        )}
+        {showStockCost && (
         <StatCard
           label="স্টকের মূল্য"
           icon={<Boxes size={15} />}
           value={<Money paise={k.stockValue} />}
           sub="খরচদামে"
         />
+        )}
       </div>
+      )}
 
       <div className="grid" style={{ gridTemplateColumns: '2fr 1fr', marginTop: 16 }}>
         <div>

@@ -197,7 +197,7 @@ function StockReport({ token, range }: { token: string; range: { from: number; t
   const allowStock = can('stock.view');
   const { data: summary } = useAsync(allowStock ? async () => (await api.reports.stockSummary(token)) as Row : (async () => ({} as Row)), [token, allowStock]);
   const { data: topValue } = useAsync(showCost ? async () => (await api.reports.topStockValue(token)) as Row[] : (async () => []), [token, showCost]);
-  const { data: dead } = useAsync(async () => (await api.reports.deadStock(token)) as Row[], [token]);
+  const { data: dead } = useAsync(showCost ? async () => (await api.reports.deadStock(token)) as Row[] : (async () => []), [token, showCost]);
   const { data: fast } = useAsync(async () => (await api.reports.fastMoving(token, range)) as Row[], [token, range.from, range.to]);
   const { data: slow } = useAsync(async () => (await api.reports.slowMoving(token, range)) as Row[], [token, range.from, range.to]);
 
@@ -225,8 +225,8 @@ function StockReport({ token, range }: { token: string; range: { from: number; t
           <ReportTable head={['পণ্য', 'পরিমাণ']} rows={(fast ?? []).slice(0, 10)} renderRow={(r) => [String(r.name ?? ''), <Bn>{String(r.qty ?? '')}</Bn>]} />
         </div>
         <div>
-          <div className="card-title" style={{ fontSize: 'var(--fs-md)', marginBottom: 10 }}>মন্দ বিক্রি</div>
-          <ReportTable head={['প্ণ্য', 'স্ডক', 'বিক্রি']} rows={(slow ?? []).slice(0, 10)} renderRow={(r) => [String(r.name ?? ''), <Bn>{String(r.quantity ?? 0)}</Bn>, <Bn>{String(r.sold_recent ?? 0)}</Bn>]} />
+          <div className="card-title" style={{ fontSize: 'var(--fs-md)', marginBottom: 10 }}>ধীরে বিক্রিত</div>
+          <ReportTable head={['পণ্য', 'স্টক', 'বিক্রি']} rows={(slow ?? []).slice(0, 10)} renderRow={(r) => [String(r.name ?? ''), <Bn>{String(r.quantity ?? 0)}</Bn>, <Bn>{String(r.sold_recent ?? 0)}</Bn>]} />
         </div>
       </div>
     </div>

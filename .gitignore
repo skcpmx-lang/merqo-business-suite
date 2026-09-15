@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+release/
+.vite/
+
+# Runtime data (SQLite databases, logs, backups) — never commit business data
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Logs & misc
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+
+# Local env
+.env
+.env.*

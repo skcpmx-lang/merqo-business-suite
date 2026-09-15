@@ -1,0 +1,51 @@
+{
+  "name": "merqo",
+  "productName": "MERQO",
+  "version": "1.0.0",
+  "description": "MERQO — Professional Desktop Retail Business Management Software (বাংলা)",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist-electron/main/index.js",
+  "author": {
+    "name": "MERQO"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:portable": "npm run build && electron-builder --win portable",
+    "dist:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "jsbarcode": "^3.12.3",
+    "lucide-react": "^1.46.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1",
+    "wait-on": "^9.1.0"
+  }
+}

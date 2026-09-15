@@ -121,7 +121,7 @@ export const T = {
   today: 'আজ',
   loading: 'লোড হচ্ছে…',
   noData: 'কোনো তথ্য নেই',
-  actions: 'একশন',
+  actions: 'অ্যাকশন',
   details: 'বিস্তারিত',
 
   // POS

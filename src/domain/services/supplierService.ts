@@ -151,7 +151,7 @@ export interface PaySupplierInput {
 
 /** Pay a supplier (§32). Money leaves an account; payable decreases. */
 export function paySupplier(db: DB, input: PaySupplierInput): { id: string; referenceNo: string } {
-  if (input.amountPaise <= 0) throw new ValidationError('পেমেন্টের অর্থ সঠিক নয়।');
+  if (input.amountPaise <= 0) throw new ValidationError('পেমেন্টের পরিমাণ সঠিক নয়।');
   const sup = db
     .prepare('SELECT * FROM suppliers WHERE id = ? AND business_id = ?')
     .get(input.supplierId, input.businessId) as { id: string; name: string; payable_balance_paise: number } | undefined;

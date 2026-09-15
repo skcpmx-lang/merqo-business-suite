@@ -79,7 +79,7 @@ export function Suppliers() {
         rows={rows}
         onRow={(r) => setLedger(r)}
         emptyTitle="এখনো কোনো সাপ্লায়ার নেই"
-        emptySub="সাপ্লায়ার যোগ করলে ক্রয় ও বকেয়া এখানে হিসাব হবে।"
+        emptySub="সাপ্লায়ার যোগ করলে ক্রয় আর প্রদেয়ের হিসাব এখানে হবে।"
         emptyIcon={<Truck size={20} />}
       />
 

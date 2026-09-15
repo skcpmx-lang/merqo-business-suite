@@ -241,7 +241,7 @@ export function Dashboard() {
               <PackageX size={15} style={{ color: 'var(--c-danger)' }} /> স্টক সতর্কতা
             </div>
             {data.outOfStock.length === 0 && data.lowStock.length === 0 ? (
-              <Empty title="সব পণ্যের স্টক আছে" compact sub="কম স্টক বা শেষ স্টক নেই।" />
+              <Empty title="সব পণ্যের স্টক আছে" compact sub="কম স্টক বা স্টক শেষ হওয়া পণ্য নেই।" />
             ) : (
               <>
                 {data.outOfStock.slice(0, 4).map((p, i) => (

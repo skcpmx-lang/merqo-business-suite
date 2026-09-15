@@ -356,7 +356,7 @@ export function Pos() {
       }
       setHeldModal(false);
     } catch (e) {
-      toast('error', 'হোল্ড থেকে আনা যায়নি', errMsg(e));
+      toast('error', 'হোল্ড করা কার্ট খোলা যায়নি', errMsg(e));
     }
   }
 

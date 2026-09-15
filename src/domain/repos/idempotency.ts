@@ -35,7 +35,7 @@ export function runIdempotent<T>(
     .get(scope.businessId, scope.sessionId, key) as { result: string; request_hash: string } | undefined;
   if (existing) {
     if (existing.request_hash !== payloadHash) {
-      throw new ConflictError('এই রিকোয়েস্ট চাবিটি অন্য ডেটার সাথে আগে ব্যবহৃত হয়েছে। নতুন চাবির সাথে চেষ্টা করুন।');
+      throw new ConflictError('এই চাবিটি আগেই অন্য তথ্যের সাথে ব্যবহৃত হয়েছে। নতুন চাবি দিয়ে চেষ্টা করুন।');
     }
     return JSON.parse(existing.result) as T;
   }

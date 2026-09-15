@@ -21,7 +21,7 @@ export function DataCenter() {
     <div>
       <div className="page-head">
         <div>
-          <div className="page-title">ডেটা: ব্যাকআপ, আমদানি, রপ্তানি</div>
+          <div className="page-title">ডেটা: ব্যাকআপ, ইমপোর্ট, এক্সপোর্ট</div>
           <div className="page-sub">সব ডেটা এই কম্পিউটারেই — নিরাপত্তার জন্য নিয়মিত ব্যাকআপ নিন</div>
         </div>
       </div>
@@ -29,8 +29,8 @@ export function DataCenter() {
       <Tabs
         tabs={[
           { key: 'backup', label: 'ব্যাকআপ ও পুনরুদ্ধার' },
-          { key: 'import', label: 'আমদানি (CSV)' },
-          { key: 'export', label: 'রপ্তানি (CSV)' },
+          { key: 'import', label: 'ইমপোর্ট (CSV)' },
+          { key: 'export', label: 'এক্সপোর্ট (CSV)' },
           { key: 'health', label: 'ডাটাবেস পরীক্ষা' }
         ]}
         active={tab}
@@ -113,7 +113,7 @@ function BackupPanel({ token }: { token: string }) {
         <div className="card card-pad">
           <Empty
             title="এখনো কোনো ব্যাকআপ নেই"
-            sub="একটি ব্যাকআপ পুরো ডাটাবেসের ফাইল কপি — পুনরুদ্ধার করলে সব হিসাব আগের অবস্থায় ফিরে আসে।"
+            sub="ব্যাকআপ মানে পুরো ডাটাবেসের এক কপি — পুনরুদ্ধার করলে সব হিসাব সেই সময়ের অবস্থায় ফিরে আসে।"
             icon={<DatabaseBackup size={22} />}
             action={can('backup.create') ? <Button variant="primary" onClick={create}>প্রথম ব্যাকআপ নিন</Button> : undefined}
           />
@@ -249,9 +249,9 @@ function ImportPanel({ token, entity, onEntity }: { token: string; entity: Impor
       const r = await api.imports.execute(token, { entity, csv, fieldMap }, idemKey());
       setResult(r);
       setPreview(null);
-      toast('success', 'আমদানি সম্পন্ন', `${r.imported}টি যোগ হয়েছে, ${r.failed}টি বাদ`);
+      toast('success', 'ইমপোর্ট সম্পন্ন', `${r.imported}টি যোগ হয়েছে, ${r.failed}টি বাদ`);
     } catch (e) {
-      toast('error', 'আমদানি হয়নি', errMsg(e));
+      toast('error', 'ইমপোর্ট হয়নি', errMsg(e));
     } finally {
       setImporting(false);
     }
@@ -349,7 +349,7 @@ function ImportPanel({ token, entity, onEntity }: { token: string; entity: Impor
                 </strong>
                 <div style={{ flex: 1 }} />
                 <Button variant="primary" icon={<Upload size={15} />} loading={importing} disabled={!allowed || validCount === 0} onClick={doImport}>
-                  <Bn>{validCount}</Bn>টি আমদানি করুন
+                  <Bn>{validCount}</Bn>টি ইমপোর্ট করুন
                 </Button>
               </div>
               {preview.errors.length > 0 && (
@@ -382,7 +382,7 @@ function ImportPanel({ token, entity, onEntity }: { token: string; entity: Impor
           {result && (
             <div className="card card-pad" style={{ borderColor: 'var(--c-success)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--c-success)', fontWeight: 700 }}>
-                <CheckCircle2 size={20} /> আমদানি সম্পন্ন: {result.imported}টি যোগ, {result.skipped}টি বাদ, {result.failed}টি ব্যর্থ
+                <CheckCircle2 size={20} /> ইমপোর্ট সম্পন্ন: {result.imported}টি যোগ, {result.skipped}টি বাদ, {result.failed}টি ব্যর্থ
               </div>
             </div>
           )}
@@ -441,7 +441,7 @@ function ExportPanel({ token }: { token: string }) {
       ))}
       <div className="card card-pad" style={{ gridColumn: '1 / -1', background: 'var(--c-surface-2)' }}>
         <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--c-ink-2)', lineHeight: 1.6 }}>
-          এক্সপোর্টেড ফাইল স্ট্যান্ডার্ড CSV — Excel/Google Sheets-এ খুলতে পারবেন। পরে “আমদানি” ট্যাব থেকে পণ্য/কাস্টমার/সাপ্লায়ার আবার
+          এক্সপোর্ট করা ফাইল স্ট্যান্ডার্ড CSV — Excel/Google Sheets-এ খুলতে পারবেন। পরে “ইমপোর্ট” ট্যাব থেকে পণ্য/কাস্টমার/সাপ্লায়ার আবার
           এনে নিতে পারবেন।
         </p>
       </div>

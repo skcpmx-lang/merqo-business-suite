@@ -141,7 +141,7 @@ function ProfileCard({ user, onPassword }: { user: LoginResult; onPassword: (cur
   async function changePassword() {
     if (!current || !next) return;
     if (next !== confirm) {
-      toast('error', 'পাসওয়ার্ড মেলেছে না', 'নতুন পাসওয়ার্ড দুটো লেখা একই হতে হবে।');
+      toast('error', 'পাসওয়ার্ড মেলেছে না', 'দুটি নতুন পাসওয়ার্ড একই হতে হবে।');
       return;
     }
     setBusy(true);
@@ -219,14 +219,14 @@ function UserFormModal({ user, onClose, onDone }: { user: UserView | null; onClo
     try {
       if (isEdit) {
         await api.users.update(token, { userId: user!.id, name: name.trim(), roleKey: role, isActive: active });
-        toast('success', 'ব্যবহারকারী আপডেট হয়েছে');
+        toast('success', 'ব্যবহারকারী হালনাগাদ হয়েছে');
       } else {
         await api.users.create(token, { name: name.trim(), username: username.trim(), password, roleKey: role }, idemKey());
         toast('success', 'নতুন ব্যবহারকারী যোগ হয়েছে');
       }
       onDone();
     } catch (e) {
-      toast('error', isEdit ? 'আপডেট হয়নি' : 'যোগ হয়নি', errMsg(e));
+      toast('error', isEdit ? 'হালনাগাদ হয়নি' : 'যোগ হয়নি', errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -262,7 +262,7 @@ function UserFormModal({ user, onClose, onDone }: { user: UserView | null; onClo
         </div>
         {!isEdit ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="ইউজারনেম *" hint="লগইনের জন্য, ছোট হরফ">
+            <Field label="ইউজারনেম *" hint="লগইনের সময় ব্যবহার হবে">
               <TextInput value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="যেমন: rahim" />
             </Field>
             <Field label="শুরুকারী পাসওয়ার্ড *" hint="কমপক্ষে ৪ অক্ষর">
@@ -400,7 +400,7 @@ function RolesPanel({ token }: { token: string }) {
           <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--c-ink-3)', margin: '8px 0 14px' }}>
             {isOwnerRole
               ? 'মালিক ভূমিকার সব কাজের অধিকার আছে — পরিবর্তন করা যায় না।'
-              : `এই ভূমিকার ব্যবহারকারীরা নিচের কাজগুলো করতে পারবে। ডিফল্ট: ${String(role.key) === 'manager' ? 'সব ব্যবসা কাজ' : String(role.key) === 'cashier' ? 'POS ও ক্যাশ' : 'বাছাই করা কাজ'}`}
+              : `এই ভূমিকার ব্যবহারকারীরা নিচের কাজগুলো করতে পারবে। ডিফল্ট: ${String(role.key) === 'manager' ? 'সব ব্যবসা কাজ' : String(role.key) === 'cashier' ? 'POS ও ক্যাশ' : 'নির্বাচিত কাজ'}`}
           </p>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
             {PERMISSIONS.map((p) => (

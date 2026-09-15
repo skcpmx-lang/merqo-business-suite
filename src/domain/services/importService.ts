@@ -201,7 +201,7 @@ export function executeImport(
     rows.forEach((r, idx) => {
       const rowNum = idx + 2;
       if (errorRows.has(rowNum)) {
-        importErrors.push({ row: rowNum, message: 'প্রিভিউ ভ্যালিডেশন ব্যর্থ' });
+        importErrors.push({ row: rowNum, message: 'প্রিভিউ ব্যর্থ হয়েছে' });
         return;
       }
       try {

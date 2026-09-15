@@ -44,7 +44,7 @@ export interface CreateExpenseInput {
 }
 
 export function createExpense(db: DB, input: CreateExpenseInput): { id: string; referenceNo: string } {
-  if (input.amountPaise <= 0) throw new ValidationError('খরচের অর্থ সঠিক নয়।');
+  if (input.amountPaise <= 0) throw new ValidationError('খরচের পরিমাণ সঠিক নয়।');
   const cat = db
     .prepare('SELECT * FROM expense_categories WHERE id = ? AND business_id = ? AND is_active = 1')
     .get(input.categoryId, input.businessId) as Record<string, unknown> | undefined;

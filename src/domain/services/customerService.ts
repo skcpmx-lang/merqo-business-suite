@@ -150,7 +150,7 @@ export interface CollectPaymentInput {
 
 /** Collect an old due from a customer (§21). Money → account; due decreases. */
 export function collectCustomerPayment(db: DB, input: CollectPaymentInput): { id: string; referenceNo: string; amountPaise: Paise } {
-  if (input.amountPaise <= 0) throw new ValidationError('পেমেন্টের অর্থ সঠিক নয়।');
+  if (input.amountPaise <= 0) throw new ValidationError('পেমেন্টের পরিমাণ সঠিক নয়।');
   const cust = db
     .prepare('SELECT * FROM customers WHERE id = ? AND business_id = ?')
     .get(input.customerId, input.businessId) as { id: string; name: string; due_balance_paise: number } | undefined;

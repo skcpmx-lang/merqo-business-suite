@@ -13,7 +13,7 @@ export const FIELD_DEFINITIONS: Record<ImportEntity, { key: string; label: strin
     { key: 'purchasePrice', label: 'ক্রয় মূল্য', required: false, money: true },
     { key: 'sellingPrice', label: 'বিক্রয় মূল্য', required: false, money: true },
     { key: 'openingStock', label: 'প্রাথমিক স্টক', required: false, number: true },
-    { key: 'reorderLevel', label: 'পুনঃ অর্ডার সীমা', required: false, number: true }
+    { key: 'reorderLevel', label: 'পুনরায় অর্ডার সীমা', required: false, number: true }
   ],
   customers: [
     { key: 'name', label: 'নাম', required: true },

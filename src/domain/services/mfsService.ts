@@ -195,7 +195,7 @@ export function listCommissionRules(db: DB, businessId: string) {
 export function createMfsTransaction(db: DB, input: CreateMfsTransactionInput) {
   const provider = getProvider(db, input.businessId, input.providerId);
   if (!provider.wallet_id) throw invalidStateNoWallet(provider.name);
-  if (input.amountPaise <= 0) throw new ValidationError('লেনদেনের অর্থ সঠিক নয়।');
+  if (input.amountPaise <= 0) throw new ValidationError('লেনদেনের পরিমাণ সঠিক নয়।');
 
   const commission = input.commissionPaise ?? computeCommission(
     db, input.businessId, provider.id, input.transactionType, input.amountPaise

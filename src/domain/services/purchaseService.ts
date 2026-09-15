@@ -87,7 +87,7 @@ export function createPurchase(db: DB, input: CreatePurchaseInput): {
 
   let received = 0;
   for (const p of input.payments) {
-    if (p.amountPaise < 0) throw new ValidationError('পেমেন্টের অর্থ সঠিক নয়।');
+    if (p.amountPaise < 0) throw new ValidationError('পেমেন্টের পরিমাণ সঠিক নয়।');
     received += p.amountPaise;
     if (p.amountPaise > 0 && !findAccountByMethod(db, input.businessId, p.method)) {
       throw new ValidationError(`“${p.method}”-এর জন্য কোনো সক্রিয় হিসাব নেই।`);

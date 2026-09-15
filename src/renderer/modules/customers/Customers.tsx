@@ -79,7 +79,7 @@ export function Customers() {
         rows={rows}
         onRow={(r) => setLedger(r)}
         emptyTitle="এখনো কোনো কাস্টমার নেই"
-        emptySub="বকেয়া-বিরত বিক্রয়ের জন্য কাস্টমার তৈরি করুন।"
+        emptySub="বকেয়ায় বিক্রির জন্য কাস্টমার তৈরি করুন।"
         emptyIcon={<Users size={20} />}
       />
 
@@ -155,7 +155,7 @@ function CustomerFormModal({ customer, onClose, onSaved }: { customer: Row | nul
           <Field label="ফোন">
             <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="০১XXXXXXXXX" />
           </Field>
-          <Field label="উজড় সীমা (৳)" hint="এই মাত্রার বেশি বকেয়াতে সতর্কতা">
+          <Field label="উজড় সীমা (৳)" hint="এর বেশি বকেয়া হলে সতর্কতা দেখাবে">
             <TextInput inputMode="decimal" className="input-money" value={creditLimit || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); setCreditLimit(Number.isFinite(v) ? v : 0); }} />
           </Field>
         </div>

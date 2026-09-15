@@ -129,7 +129,7 @@ export function Products() {
           <SelectInput value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }} style={{ width: 130 }}>
             <option value="">সব স্টক</option>
             <option value="low">কম স্টক</option>
-            <option value="out">শেষ স্টক</option>
+            <option value="out">স্টক শেষ</option>
           </SelectInput>
           {can('products.create') && (
             <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditing('new')}>
@@ -366,7 +366,7 @@ function ProductFormModal({
           <Field label="পাইকারি (৳)">
             <TextInput type="text" inputMode="decimal" className="input-money" value={f.wholesale || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ wholesale: Number.isFinite(v) ? v : 0 }); }} />
           </Field>
-          <Field label="সর্বনিম্ন দাম (৳)" hint="এর নিচে সেললে সতর্কতা">
+          <Field label="সর্বনিম্ন দাম (৳)" hint="এর নিচে বিক্রি করতে অনুমতি লাগবে">
             <TextInput type="text" inputMode="decimal" className="input-money" value={f.minPrice || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ minPrice: Number.isFinite(v) ? v : 0 }); }} />
           </Field>
         </div>
@@ -379,7 +379,7 @@ function ProductFormModal({
           <Field label="বারকোড (প্রাইমারি)">
             <TextInput value={f.barcode} onChange={(e) => set({ barcode: e.target.value })} placeholder="স্ক্যান বা লিখুন" />
           </Field>
-          <Field label="অন্যান্য বারকোড" hint="কমা দিয়ে আলাদা">
+          <Field label="অন্যান্য বারকোড" hint="কমা দিয়ে আলাদা করুন">
             <TextInput value={f.extraBarcodes} onChange={(e) => set({ extraBarcodes: e.target.value })} placeholder="৮৯০..., ৮৯১..." />
           </Field>
           <Field label="পুনরায় অর্ডার সীমা" hint="এই মাত্রার নিচে গেলে সতর্কতা">
@@ -391,7 +391,7 @@ function ProductFormModal({
             <Field label="প্রাথমিক স্টক" hint="খালি/০ হলে পরে ক্রয় দিয়ে স্টক আসবে">
               <TextInput inputMode="decimal" value={f.openingStock || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ openingStock: Number.isFinite(v) ? v : 0 }); }} />
             </Field>
-            <Field label="প্রাথমিক স্টকের খরচ (৳)" hint="খালি থাকলে খরচদাম ধরা হবে">
+            <Field label="প্রাথমিক স্টকের খরচ (৳)" hint="খালি রাখলে পণ্যের খরচদাম ধরা হবে">
               <TextInput inputMode="decimal" className="input-money" value={f.openingCost || ''} placeholder="০" onChange={(e) => { const v = Number(e.target.value); set({ openingCost: Number.isFinite(v) ? v : 0 }); }} />
             </Field>
           </div>

@@ -58,7 +58,7 @@ const NAV: NavItem[] = [
   { key: 'mfs', label: 'MFS এজেন্ট', icon: <Smartphone size={17} />, perm: 'mfs.view', group: 'হিসাব-নিকাশ' },
   { key: 'reports', label: 'রিপোর্ট', icon: <BarChart3 size={17} />, perm: 'reports.view', group: 'হিসাব-নিকাশ' },
 
-  { key: 'data', label: 'ডেটা: ব্যাকআপ/আমদানি', icon: <DatabaseBackup size={17} />, group: 'প্যানেল' },
+  { key: 'data', label: 'ডেটা: ব্যাকআপ/ইমপোর্ট', icon: <DatabaseBackup size={17} />, group: 'প্যানেল' },
   { key: 'users', label: 'ব্যবহারকারী ও অডিট', icon: <UserCog size={17} />, perm: 'users.manage', group: 'প্যানেল' },
   { key: 'settings', label: 'সেটিংস', icon: <Settings size={17} />, group: 'প্যানেল' }
 ];

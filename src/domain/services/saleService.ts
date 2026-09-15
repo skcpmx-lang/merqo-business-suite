@@ -197,7 +197,7 @@ function validatePayments(db: DB, input: CreateSaleInput, total: Paise) {
     // credit sale — no payment at all
   }
   for (const p of input.payments) {
-    if (p.amountPaise < 0) throw new ValidationError('পেমেন্টের অর্থ সঠিক নয়।');
+    if (p.amountPaise < 0) throw new ValidationError('পেমেন্টের পরিমাণ সঠিক নয়।');
     received += p.amountPaise;
     if (p.method === 'cash') cashReceived += p.amountPaise;
     if (p.amountPaise > 0) {

@@ -327,7 +327,7 @@ function PurchaseDetailModal({
       onChanged();
       onClose();
     } catch (e) {
-      toast('error', 'রিটার্ন হয়নি', errMsg(e));
+      toast('error', 'ফেরত হয়নি', errMsg(e));
     } finally {
       setBusy(false);
     }

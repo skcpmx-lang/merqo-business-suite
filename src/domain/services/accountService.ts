@@ -148,7 +148,7 @@ export interface TransferInput {
  * keeps a linked record. Never revenue, never expense (§37).
  */
 export function transfer(db: DB, input: TransferInput): { id: string; referenceNo: string } {
-  if (input.amountPaise <= 0) throw new ValidationError('ট্রান্সফারের অর্থ সঠিক নয়।');
+  if (input.amountPaise <= 0) throw new ValidationError('ট্রান্সফারের পরিমাণ সঠিক নয়।');
   if (input.fromAccountId === input.toAccountId) {
     throw new ValidationError('একই হিসাবের মধ্যে ট্রান্সফার করা যায় না।');
   }

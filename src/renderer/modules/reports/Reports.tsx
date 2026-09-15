@@ -207,7 +207,7 @@ function StockReport({ token, range }: { token: string; range: { from: number; t
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 16 }}>
         <MiniStat label="মোট পণ্য" value={<Bn>{String(summary?.products ?? 0)}</Bn>} />
         <MiniStat label="কম স্টক" value={<Bn>{String(summary?.low_stock ?? 0)}</Bn>} />
-        <MiniStat label="শেষ স্টক" value={<Bn>{String(summary?.out_of_stock ?? 0)}</Bn>} />
+        <MiniStat label="স্টক শেষ" value={<Bn>{String(summary?.out_of_stock ?? 0)}</Bn>} />
         {showCost && <MiniStat label="মোট স্টক মূল্য" value={<Money paise={(summary?.stock_value as number) ?? 0} />} sub="খরচদামে" />}
       </div>
       )}

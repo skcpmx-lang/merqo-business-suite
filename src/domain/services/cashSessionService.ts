@@ -110,7 +110,7 @@ export function closeShift(db: DB, input: CloseShiftInput) {
   if (!shift) throw new NotFoundError('শিফট', input.shiftId);
   if (shift.status !== 'open') throw new ConflictError('এই শিফটটি ইতিমধ্যে বন্ধ।');
   if (input.userId !== shift.user_id) {
-    throw new ValidationError('শিফট শুধুমাত্র যে খুলেছেন সে-ই বন্ধ করতে পারবেন।');
+    throw new ValidationError('শিফট যে খুলেছেন, শুধু সে-ই বন্ধ করতে পারবেন।');
   }
 
   const at = input.at ?? Date.now();

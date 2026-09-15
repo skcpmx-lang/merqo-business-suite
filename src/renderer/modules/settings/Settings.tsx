@@ -302,7 +302,7 @@ function PosSection({ token, canManage }: { token: string; canManage: boolean })
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <SectionHead title="বিক্রয় (POS)" sub="বিলের পরের আচরণ ও প্রিন্টার।" />
+      <SectionHead title="বিক্রয় (POS)" sub="বিক্রয়ের পরে কী হবে আর কোন প্রিন্টারে ছাপবে।" />
       {!canManage && <ReadOnlyBanner />}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="ডিফল্ট কাগজ">
@@ -375,7 +375,7 @@ function InvoiceSection({ token, canManage }: { token: string; canManage: boolea
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <SectionHead title="বিল/রসিদ" sub="বিল নম্বরের ফরম্যাট ও রসিদের পাওয়া যাওয়া লেখা।" />
+      <SectionHead title="বিল/রসিদ" sub="বিল নম্বরের ফরম্যাট আর রসিদের নিচের লেখা।" />
       {!canManage && <ReadOnlyBanner />}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="বিল নম্বরের প্রিফিক্স">
@@ -543,7 +543,7 @@ function BackupSection({ token, canManage }: { token: string; canManage: boolean
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <SectionHead title="ব্যাকআপ" sub="ব্যাকআপ ফাইল কোথায় রাখবে অ্যাপ।" />
+      <SectionHead title="ব্যাকআপ" sub="অ্যাপ কোথায় ব্যাকআপ ফাইল রাখবে।" />
       {!canManage && <ReadOnlyBanner />}
       <Field label="ব্যাকআপ ফোল্ডার">
         <div style={{ display: 'flex', gap: 8 }}>

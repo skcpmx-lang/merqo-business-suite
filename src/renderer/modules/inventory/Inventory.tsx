@@ -101,7 +101,7 @@ export function Inventory() {
       <div className="grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         <StatCard label="মোট পণ্য" icon={<Boxes size={15} />} value={<Bn>{String(summary?.totalProducts ?? 0)}</Bn>} />
         <StatCard label="কম স্টক" tone="amber" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.lowStock ?? 0)}</Bn>} sub="অর্ডার সীমায় বা তার নিচে" />
-        <StatCard label="শেষ স্টক" tone="red" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.outOfStock ?? 0)}</Bn>} />
+        <StatCard label="স্টক শেষ" tone="red" icon={<AlertTriangle size={15} />} value={<Bn>{String(summary?.outOfStock ?? 0)}</Bn>} />
         {can('stock.viewCost') ? (
           <StatCard label="স্টকের মূল্য" value={`৳${(((summary?.stockValuePaise as number) ?? 0) / 100).toLocaleString('en-IN')}`} sub="খরচদামে" />
         ) : (
@@ -127,7 +127,7 @@ export function Inventory() {
             <SelectInput value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: 150 }}>
               <option value="">সব স্টক</option>
               <option value="low">কম স্টক</option>
-              <option value="out">শেষ স্টক</option>
+              <option value="out">স্টক শেষ</option>
             </SelectInput>
           </div>
           <DataTable
@@ -294,7 +294,7 @@ function AdjustModal({ token, product, onClose, onDone }: { token: string; produ
           </Field>
         )}
         {type !== 'correction' && (
-          <Field label="কারণ" hint={type === 'damaged' || type === 'expired' ? 'অবশ্যিক — কারণে হিসাব ধরা হয়' : 'ঐচ্ছিক'}>
+          <Field label="কারণ" hint={type === 'damaged' || type === 'expired' ? 'ঐচ্ছিক — কারণ অনুযায়ী হিসাব হয়' : 'ঐচ্ছিক'}>
             <TextInput value={reason} onChange={(e) => setReason(e.target.value)} placeholder={type === 'damaged' ? 'যেমন: প্যাকেট ভেঙে গেছে' : type === 'expired' ? 'যেমন: মেয়াদ শেষ' : 'কারণ লিখুন'} />
           </Field>
         )}

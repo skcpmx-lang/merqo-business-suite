@@ -1,90 +1,112 @@
-# MERQO Business Suite — QA Report
+# MERQO v1.0.0 — Final Windows Release Gate: QA Report
 
-**Date:** 2026-09-16 · **Branch:** `arena/01a0a5fc-merqo-business-suite` · **Scope:** full build through renderer completion
+**Date:** 2026-09-16 · **Branch:** `arena/01a0a5fc-merqo-business-suite` · **Last verified commit:** see git log (`a1c8435` baseline + hardening commits)
 
-## 1. Verification matrix
+## RELEASE GATE STATUS: **NOT MET YET**
 
-| Check | Command | Result |
+No open P0/P1. The Linux-verifiable phases below are PASS. Every real-Windows
+item (Phases 1–8, 13–15, 17-on-Windows, 20) is **NOT TESTED** in this
+environment (Linux sandbox — no Windows runner, no GUI, no printer, no scanner).
+Nothing marked NOT TESTED has been converted to PASS, and no `.exe` is claimed.
+
+---
+
+## Phase-by-phase matrix
+
+### PASS (verified here, Linux)
+
+| Phase | Item | Evidence |
 |---|---|---|
-| TypeScript (renderer + preload + shared) | `tsc -p tsconfig.json` | ✅ 0 errors |
-| TypeScript (main + node config) | `tsc -p tsconfig.node.json` | ✅ 0 errors |
-| Unit + integration + e2e tests | `npx vitest run` | ✅ **78/78 passed** (9 files) |
-| Renderer production bundle | `npx vite build` | ✅ 0 warnings, no native-module externalization |
-| Main + preload esbuild bundle | `node scripts/build.mjs` | ✅ (see §4 packaging note) |
+| 16 | Role permissions at the IPC boundary — every business channel requires a session; gate fires **before** domain code (DENIED ≠ NOT_FOUND on fake entities) | `ipc-security.test.ts` (17 tests) |
+| 16 | Settings permissions (`settings.manage`): cashier denied, manager allowed | ipc-security phase-16 block |
+| 16 | Backup vs restore split: manager `backup.create` yes / `backup.restore` no (role exclusion); owner restore end-to-end (prepare → `restartRequired`) | ipc-security phase-16 block |
+| 16 | Financial report permissions: P&L → `profit.view`; cash-flow/balance-sheet → `accounts.view`; dues → respective view perms | permission map + matrix tests |
+| 16 | **Profit visibility:** dashboard P&L/COGS fields masked per session (`profit.view`); verified against the domain's own P&L figure, masked user gets 0 + empty trends | dashboard masking test |
+| 16 | Price override / discount / credit-limit override: flags **derived from the resolved role, never from the client** — role-permission narrowing provably strips them (VALIDATION / CREDIT_LIMIT returned) | sale-flags tests |
+| 16 | Stock adjustment: `stock.adjust` gate; inventory_manager passes, cashier denied | phase-16 tests |
+| 16 | User management: `users.manage` (cashier/manager matrix; owner-only reset path) | matrix tests |
+| 16 | Audit access: `audit.view`; **queryAudit crash fixed** (ambiguous `business_id` vs users join) — accountant denied, manager reads | phase-16 tests + `auditService` fix |
+| 16 | Cost visibility: dead-stock report returns cost-based value → now `stock.viewCost` (consistent with top-stock-value); dashboard stock-value masked | handler + UI guard |
+| 16 | Double submission: same key+payload replays (1 row), same key+different payload → CONFLICT | idempotency tests |
+| 1 (partial) | Build pipeline inputs: `electron-builder.yml` (NSIS + portable, asarUnpack for better-sqlite3), `dist`/`dist-electron` globs exist, `package.json` main entry, icon present, `deleteAppDataOnUninstall: false` | static pre-flight |
+| 9/11 | Final Bangla editorial + robotic-language audit — all user-facing strings reviewed and rewritten where unnatural (e.g. "বকেয়া-বিরত"→"বকেয়ায়", "সেললে সতর্কতা"→"বিক্রি করতে অনুমতি লাগবে", "পাওয়া যাওয়া লেখা"→"নিচের লেখা", "আচরণ"→"কী হবে", "রিকোয়েস্ট চাবি"→"চাবি", "অর্থ সঠিক নয়"→"পরিমাণ সঠিক নয়", "প্রিভিউ ভ্যালিডেশন ব্যর্থ"→"প্রিভিউ ব্যর্থ হয়েছে"); anti-robotic rules documented | source sweep + `docs/BANGLA_GLOSSARY.md` |
+| 10 | Bangla consistency: `docs/BANGLA_GLOSSARY.md` created; rejected terms verified **0** occurrences (মজুদ, গ্রাহক, সরবরাহকারী, রিটার্ন, আপডেট, আমদানি/রপ্তানি, শেষ-স্টক, ভ্যালিডেশন…); একশন→অ্যাকশন typo fixed | consistency greps (doc §7) |
+| 12 | Production placeholder audit: no Lorem/Demo/Sample/John Doe/ABC/fake data in `src/` (only code comments mentioning "no fake data") | grep sweep |
+| 14 (software) | Complete business-day simulation: shift → purchase → barcode sale → cash/credit/MFS sales → collections → returns (sales + purchase) → expenses → transfers → MFS in/out → invoices → reports → reconciliation → shift close, with every financial result reconciling | `tests/e2e/shop-day.test.ts` (12 steps) |
+| 15 (software) | Cross-surface reconciliation for identical ranges: dashboard ≡ reports  ledgers ≡ accounts ≡ inventory (sales, purchases, payments, receivables, payables, cash, bank, MFS, expenses, COGS, gross, net, stock qty/value) | e2e invariants + `money-precision` (account recompute) + perf-10k consistency |
+| 17 (Linux) | 10,000 products + 2,000 sales: list 7 ms, sales list 1 ms, global search 1 ms, dashboard 28 ms, summary 1 ms; accounts + inventory reconcile at scale | `perf-10k.test.ts` (6 tests) |
+| 18 | This report | `docs/QA_REPORT.md` |
+| — | Regression suite: **112/112** across 13 files; `tsc` clean on both configs; `vite build` clean | `npx vitest run` |
 
-## 2. Domain invariants verified by tests (all green)
+### FAIL
 
-- Account balance ≡ ledger `SUM` (cash/bank/MFS).
-- Inventory quantity ≡ movements ledger.
-- Customer due ≡ `customer_transactions` sums; supplier payable ≡ `supplier_transactions` sums.
-- Shift close: expected = opening + cash in − cash out; variance computed against counted cash.
-- Daily closing: netSales − cogs = gross; gross − expenses = net; equals `salesSummary`.
-- Weighted average: `newAvg = floor((q·avg + inQ·inCost)/(q+inQ) + 0.5)`; COGS = `round(avgCost·qty)`.
-- Returns: restock path adjusts inventory + COGS reversal; payable/due deltas correct.
-- Atomicity: mid-transaction failure → full rollback (no partial rows).
-- Idempotency: duplicate idempotency key → same result, no double write.
-- Migration: fresh DB → v3; schema version tracked; integrity check (`PRAGMA integrity_check` + FK) clean.
+*None open.* (All defects found this round were fixed and re-verified — see defect log.)
 
-## 3. UI contract audit (renderer ↔ main)
+### NOT TESTED (require real Windows / hardware — never read as PASS)
 
-Every `window.merqo` call in the renderer was checked against the actual
-handler + domain service:
+| Phase | Item |
+|---|---|
+| 1 | Production `.exe` + NSIS installer + portable build on a Windows runner/CI; app starts, correct version/icon, no dev UI, no missing deps/assets/console, no startup error; record commit/build#/Node/PM/Windows/arch |
+| 2 | Clean install: install → launch → setup → configure → use → close → reopen (shortcuts, DB init, Business Setup, logo, settings/users/transactions persistence) |
+| 3 | Uninstall/data safety: app removed, `%APPDATA%/merqo` + backup files survive, reinstall behavior documented (config-level intent: `deleteAppDataOnUninstall: false` — behavior on real Windows unverified) |
+| 4 | Real barcode hardware: USB HID + Bluetooth scanner — known/unknown/rapid/repeated scans, suffix/enter behavior, disconnect-reconnect; no duplicate sale, no missed scan, no stray text; unknown-barcode workflow |
+| 5 | Real printers: 57 mm / 80 mm thermal + A4 — receipt, invoice, customer/supplier payment receipt, purchase/return documents, daily closing, reports; Bangla glyphs, ৳, logo, margins, alignment, no clipping/blank pages |
+| 6 | Real PDF rendering on Windows, visually inspected (Bangla shaping, ৳, logo, long names, many lines, multi-page) — not "file generated" |
+| 7 | DPI 100/125/150/175/200% × 1366×768 / 1920×1080 / 2560×1440 / 3840×2160; normal/resized/maximized windows; all blocker classes (overlap, clipping, broken Bangla, off-viewport modals/buttons, broken tables, unusable POS, horizontal overflow) |
+| 8 | Complete visual audit of all 20 screens as a senior UI/UX reviewer (typography, spacing, hierarchy, density, iconography, empty/loading/error states, modal proportions, table readability, responsiveness) |
+| 9/11 (residual) | Rendering-level check: Bangla shaping + Nirmala UI fallback at real Windows fonts (code-level Unicode verified; pixel-level not) |
+| 13 | Full restore on Windows: backup → close app → add transactions → restore → relaunch → verify products/stock/customers/suppliers/sales/purchases/payments/accounts/expenses/MFS/settings/users/audit |
+| 14 (residual) | Same 25-step day executed **in the Windows build** with physical printing (software simulation passes on Linux) |
+| 15 (residual) | Same reconciliation executed **in the Windows build** |
+| 17 (residual) | 10k+ dataset in the **Windows build** — no UI freeze (Linux numbers above) |
+| 20 | Final artifacts: exact `.exe`/installer/version/commit/SHA/build-date/arch, reproducible from the repo |
 
-- Method names, argument order, and result shapes (incl. fixes found and
-  applied during this pass):
-  - `customers.list` / `suppliers.list` return `{rows,total}` (interface fixed).
-  - `shift.list` returns `Row[]` (interface fixed).
-  - `import.preview` result keys (`totalRows, validRows, errors, sample`) and
-    `import.execute` result (`jobId, imported, skipped, failed, errorFile`)
-    matched to `importService`.
-  - Report row keys matched to `reportService` (`bucket`, `day`, `netSales`,
-    `grossProfit`, `netProfit`, `stock_summary: products/low_stock/out_of_stock/stock_value`,
-    `topStockValue.value`, `slowMoving.sold_recent`, `receivable/payable`).
-  - MFS keys: providers (`wallet_balance_paise`, `wallet_account_no`),
-    reconciliation (`openingBalancePaise, cashInPaise, cashOutPaise,
-    expectedBalancePaise, walletBalancePaise, variancePaise, transactionCount`).
-  - Sales statuses corrected to the real set: `completed /
-    partially_refunded / refunded / voided`.
-- Permission gating mirrors the IPC registry (e.g. backup panel requires
-  `backup.create`; role editor requires `users.manage`; CSV export requires
-  `exports.run`). Denied panels render Bangla empty states, not errors.
-- Bangla terminology: single source (`src/shared/glossary.ts` labels reused
-  across modules); one mixed-script defect (Devanagari in a settings label)
-  found by automated code-point scan and fixed; `হেঁচারি` replaced with the
-  standard `সাধারণ কাস্টমার` in POS/Sales to match reports.
-- Money: all UI paths go through `Money` (integer paise → `৳ 12,500.00`);
-  no `Number` arithmetic on taka anywhere in modules.
+---
 
-## 4. Packaging
+## Defect log (severity · symptom · root cause · fix · verifying test)
 
-- `electron-builder.yml` present: NSIS + portable, asar with
-  `better-sqlite3` unpacked, icon `buildResources/icon.ico` (multi-size,
-  generated from `icon-src.png`).
-- **Note (environment):** this sandbox is Linux; producing the signed
-  Windows `.exe`/NSIS artifact and rebuilding `better-sqlite3` for `win32-x64`
-  requires Windows (or Wine + electron-rebuild). The build pipeline
-  (`scripts/build.mjs`) and Vite output are verified; the final
-  `dist:win` step should be run on a Windows agent or CI (GitHub Actions
-  `windows-latest`) before release. `deleteAppDataOnUninstall: false` is
-  intentional (user data must survive upgrades/uninstall).
+### Found & fixed this release-gate session
 
-## 5. Residual risks / follow-ups
+| Sev | Defect | Symptom | Root cause | Fix | Verified by |
+|---|---|---|---|---|---|
+| **P1** | Audit-log query crash | Every audit-log query failed with INTERNAL ("অপ্রত্যাশিত ত্রুটি"); audit tab unusable for all roles | `queryAudit` WHERE clause used unqualified `business_id` while LEFT JOINing `users` (both tables have the column) → SQLite `ambiguous column name` | Qualify `a.business_id` in the list query; keep single-table count unqualified | `ipc-security` phase-16 audit gate (manager now reads audit, accountant denied) |
+| **P1** | Dashboard leaked profit/cost/balances to any role | Cashier (no `profit.view`/`accounts.view`/`stock.viewCost`) could read today's net profit, profit trend, cost-based stock value and cash/bank balances via direct IPC; UI hid the cards but the data crossed the bridge | `DASHBOARD_GET` had no field-level scope — one rollup served all roles | `getDashboard(..., access)` — profit/COGS, stock value, account balances, MFS computed+returned only when the session holds `profit.view` / `stock.viewCost` / `accounts.view` / `mfs.view`; renderer hides matching cards | `ipc-security` "dashboard masks profit/cost/balance fields" (manager = domain P&L, cashier = 0 + empty) |
+| **P1** | Dead-stock report leaked cost values | `REPORT_DEAD_STOCK` returned `quantity × avg_cost` to any `reports.view` holder (accountant), while the equivalent top-stock-value report required `stock.viewCost` | Inconsistent cost-visibility gate | Channel now requires `stock.viewCost`; UI fetch guarded by the same permission | `ipc-security` "cost-based dead-stock report requires stock.viewCost" |
+| **P2** | Table-header typos | Slow-moving report headers showed "প্ণ্য" / "স্ডক" | Stray matra drops in source strings | Corrected to "পণ্য" / "স্টক" | visual/source review |
+| **P2** | Ambiguous/robotic UI wording (batch) | "বকেয়া-বিরত", "সেললে সতর্কতা", "পাওয়া যাওয়া লেখা", "অর্থ সঠিক নয়", "ছোট হরফ", "হোল্ড থেকে আনা যায়নি", "শেষ স্টক", "রিটার্ন হয়নি", "আপডেট", "আমদানি/রপ্তানি" mixed with "এক্সপোর্ট", "একশন" typo, "পুনঃ অর্ডার সীমা" | Machine-translation residue + term drift across modules | Rewritten to natural Bangladeshi Bangla; single canonical term per concept; rejected-terms verified at 0 occurrences | `docs/BANGLA_GLOSSARY.md` §7 greps |
 
-1. **Windows E2E pass**: run the built app on Windows 11 — barcode-scan
-   hardware, thermal printer driver paths, PDF dialog flow.
-2. **Auto-lock**: `security.auto_lock_minutes` exists in settings defaults;
-   the UI exposes it only if a session timer is added (not claimed as a
-   feature).
-3. **i18n**: 100% Bangla as specified; no other languages.
-4. **Icon**: generated squircle "M" — brand review may swap `icon-src.png`
-   and re-run the ImageMagick ICO step.
-5. **Code signing**: no signing configured; add EV/standard code-sign cert
-   for production distribution.
+### Carried from the RC-hardening round (already fixed)
 
-## 6. Known limitations (by design, per spec §152–153)
+| Sev | Defect | Fix (short) |
+|---|---|---|
+| P0 | `previewSaleTotals` gross ×100 (paise fed to taka helper) → POS preview always 100× the bill | domain formula: `roundToPaise(fromPaise(paise)·qty)` |
+| P0 | `taxForBase` inclusive branch ×100 | `Math.round(base·bps/(10000+bps))` in paise |
+| P1 | `requirePermission` threw `UNAUTHORIZED` for valid session w/o permission | `PERMISSION_DENIED` error code |
+| P1 | cashier lacked `products.view` → POS grid broken | added to role defaults |
+| P1 | Return status never `refunded`; exact-qty return blocked; `sales.due_paise` not decremented on returns | SUM-based detection, epsilon side, due sync |
+| P1 | Print channels had no auth; `printToPDF` pageSize in pixels | session + `invoices.view` + business scope; inches (57mm 2.24×20, 80mm 3.15×20) |
+| P1 | `sandbox: false`, raw crash text, unsanitized save name | `sandbox: true`, generic Bangla message, `path.basename`, null-safe dialogs |
+| P2 | Movement types, stat-card keys, restore hardening, settings key drift | see prior commits |
 
-- MFS agent is **manual recording** — no provider API integration, no live
-  balance fetch.
-- No online sync, no multi-device, no cloud.
-- Single business per machine (setup wizard creates one; multi-business is
-  not a v1 scope).
+---
+
+## Verification commands & results (last run)
+
+```
+npx tsc --noEmit -p tsconfig.json        # PASS (0 errors)
+npx tsc --noEmit -p tsconfig.node.json   # PASS (0 errors)
+npx vitest run                           # PASS 112/112 (13 files)
+npx vite build                           # PASS (renderer bundle)
+```
+
+Test inventory: ipc-security 17 (incl. phase-16 matrix), money-precision 4,
+perf-10k 6, print 6, e2e shop-day 12, plus unit/integration sale/purchase/
+mfs/import/search suites.
+
+## Release decision
+
+Per the final principle: **MERQO is not declared production-ready.**
+When the Windows runner is available, execute Phases 1–8, 13–15, 17 and 20
+against this exact commit, record results here (never converting NOT TESTED
+to PASS without evidence), and only then may the gate change to
+**PRODUCTION RELEASE READY** with the artifact details from Phase 20.

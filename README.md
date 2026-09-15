@@ -35,10 +35,14 @@ MFS হিসাব, শিফট, লাভ-ক্ষতি রিপোর্�
 ## চালানোর পদ্ধতি (ডেভেলপার)
 
 ```bash
-npm install          # ডিপেন্ডেন্সি
-npm run rebuild:electron   # better-sqlite3 Electron-এর জন্য রিবিল্ড
+npm install          # ডিপেন্ডেন্সি (better-sqlite3 v13 = N-API প্রিবিল্ড, রিবিল্ড লাগে না)
 npm run dev          # ডেভ মোড (হট রিলোডসহ)
 ```
+
+> better-sqlite3 v13-এ Node-API (N-API) প্রিবিল্ড বান্ডেল থাকে — একই বাইনারি
+> Node-এ আর Electron 44-এ দুটোতেই লোড হয়, তাই সাধারণত `rebuild:electron`
+> লাগে না। কোনো প্রিভিল্ড না মিললে ফলব্যাক হিসেবে
+> `npm run rebuild:electron` চালানো যাবে।
 
 টেস্ট ও টাইপ-চেক:
 
@@ -49,7 +53,11 @@ npm run typecheck    # TypeScript (renderer + main)
 
 ## Windows ইনস্টলার তৈরি
 
+ক্লিন Windows মেশিনে শুধু Node (20+) লাগবে — Python/VS Build Tools লাগে না
+(`npmRebuild: false` + N-API প্রিবিল্ড):
+
 ```bash
+npm install
 npm run dist:win         # NSIS সেটআপ + পোর্টেবল EXE (release/ ফোল্ডারে)
 npm run dist:portable    # শুধু পোর্টেবল EXE
 npm run dist:dir         # আনপ্যাকেজড ফোল্ডার (টেস্টের জন্য)

@@ -11,6 +11,13 @@ files:
 asar: true
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
+# better-sqlite3 v13 ships N-API (node-api) prebuilds for win32/darwin/linux,
+# x64/arm64 — the same binary loads under plain Node AND Electron, so the
+# loader (lib/binding.js) always picks prebuilds/<platform>-<arch>.node and
+# any node-gyp output would be ignored. Skipping the rebuild keeps the
+# documented `npm run dist:win` working on a clean Windows machine with only
+# Node installed (no Python / VS Build Tools required).
+npmRebuild: false
 win:
   target:
     - nsis

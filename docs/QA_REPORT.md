@@ -15,6 +15,17 @@ release-critical fixes were made (unused dependencies removed, dead code
 removed, import file-size guard added, glossary regression guard added,
 README language defects fixed).
 
+**Round 3 (2026-09-16): Windows release validation attempt from the Linux
+environment** — see `docs/WINDOWS_VALIDATION.md`. The frozen baseline
+(`9d35711`) was audited for Windows packaging: the native-module strategy
+(better-sqlite3 v13 N-API prebuilds) was verified with binary-level evidence,
+and **one release-critical packaging defect was found and fixed** (missing
+`npmRebuild: false` — a clean Windows machine without build tools would have
+failed `npm run dist:win`, and any rebuild output would have been ignored by
+the v13 loader anyway). All 26 mandatory Windows tests remain **NOT TESTED**
+(no Windows OS, no display, no printer/scanner hardware, artifact CDN blocked
+in this sandbox — evidence in the validation record).
+
 ---
 
 ## Static release audit — Round 2, section by section
@@ -116,6 +127,12 @@ README language defects fixed).
 
 ## Defect log (severity · symptom · root cause · fix · verifying test)
 
+### Found & fixed in the Round-3 Windows validation attempt
+
+| Sev | Defect | Symptom | Root cause | Fix | Verified by |
+|---|---|---|---|---|---|
+| **P1** | `electron-builder.yml` missing `npmRebuild: false` | `npm run dist:win` on a clean Windows machine (Node only) fails at "rebuilding native dependencies" (needs Python + VS Build Tools); with a toolchain present, the rebuild output is ignored — the v13 loader always prefers `prebuilds/win32-x64.node` over `build/Release/` | better-sqlite3 v13 ships N-API (ABI-stable) prebuilds, making electron-builder's default native rebuild both unnecessary and counterproductive | `npmRebuild: false` + rationale comment in `electron-builder.yml`; README build section updated (no toolchain required; `rebuild:electron` is now an explicit fallback) | `tests/unit/native-prebuild.test.ts` (4 guards: all 7 platform/arch prebuilds present; win32 PE magic + `napi_register_module_v1` export; `npmRebuild: false` present; asarUnpack present) |
+
 ### Found & fixed in the Round-2 static audit
 
 | Sev | Defect | Symptom | Root cause | Fix | Verified by |
@@ -156,15 +173,16 @@ README language defects fixed).
 ```
 npx tsc --noEmit -p tsconfig.json        # PASS (0 errors)
 npx tsc --noEmit -p tsconfig.node.json   # PASS (0 errors)
-npx vitest run                           # PASS 114/114 (14 files)
+npx vitest run                           # PASS 118/118 (15 files)
 npx vite build                           # PASS (renderer bundle)
 npx tsc --noEmit -p tsconfig.json --noUnusedLocals --noUnusedParameters
                                          # PASS (dead-code guard, Round 2)
 ```
 
 Test inventory: ipc-security 17 (incl. phase-16 matrix), money-precision 4,
-perf-10k 6, print 6, bangla-glossary guard 2 (new), e2e shop-day 12, plus
-unit/integration sale/purchase/mfs/import/search suites.
+perf-10k 6, print 6, bangla-glossary guard 2, native-prebuild guard 4
+(Round 3), e2e shop-day 12, plus unit/integration
+sale/purchase/mfs/import/search suites.
 
 ## Release decision
 
